@@ -1,5 +1,6 @@
 from intents.classifier import IntentClassifier
 from entities.extractor import EntityExtractor
+from core.pipeline import AssistantPipeline
 
 clf = IntentClassifier()
 
@@ -26,3 +27,16 @@ tests = [
 
 for text in tests:
     print(f"{text!r:45} → {ex.extract(text)}")
+
+
+pipeline = AssistantPipeline()
+
+tests = [
+    "find me corn in yaounde",
+    "i want to sell my cassava",
+    "delete my tomato listing",
+    "what is the weather today",
+]
+
+for text in tests:
+    print(pipeline.process(text))
