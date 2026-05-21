@@ -8,25 +8,29 @@ class ToolRouter:
         self.pipeline = AssistantPipeline()
 
     def handle(self, text: str, user_id: str) -> dict:
-        # check conversation state first
         state = get_state(user_id)
         if state and state["state"] == "awaiting_delete_choice":
-            return self._handle_delete_choice(text, user_id, state["context"])
+            result = self._handle_delete_choice(text, user_id, state["context"])
+            result["language"] = "en"
+            return result
 
-        result = self.pipeline.process(text)
-        intent = result["intent"]["intent"]
-        entities = result["entities"]
+        pipeline_result = self.pipeline.process(text)
+        intent = pipeline_result["intent"]["intent"]
+        entities = pipeline_result["entities"]
+        language = pipeline_result["language"]
 
         routes = {
-            "create_listing":  self._create_listing,
+            "create_listing": self._create_listing,
             "search_listings": self._search_listings,
             "get_my_listings": self._get_my_listings,
-            "delete_listing":  self._delete_listing,
-            "update_listing":  self._update_listing,
+            "delete_listing": self._delete_listing,
+            "update_listing": self._update_listing,
         }
 
         handler = routes.get(intent, self._unknown)
-        return handler(entities, user_id)
+        result = handler(entities, user_id)
+        result["language"] = language
+        return result
 
     def _create_listing(self, entities, user_id):
         role = get_user_role(user_id)

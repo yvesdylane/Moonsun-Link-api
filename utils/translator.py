@@ -17,3 +17,15 @@ def translate_to_english(text: str) -> tuple[str, str]:
     except Exception:
         # if detection fails, just return original
         return text, "unknown"
+
+def translate_reply(text: str, target_lang: str) -> str:
+    """
+    Translates bot reply to target language.
+    If target is English, returns as is.
+    """
+    try:
+        if target_lang == "en" or target_lang == "unknown":
+            return text
+        return GoogleTranslator(source="en", target=target_lang).translate(text)
+    except Exception:
+        return text

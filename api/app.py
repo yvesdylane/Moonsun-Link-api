@@ -4,6 +4,7 @@ from tools.router import ToolRouter
 from db.controller.userController import check_if_user_exist, create_user_from_whatsapp
 from utils.whatsapp import send_whatsapp_reply
 from utils.formatter import format_listings
+from utils.translator import translate_reply
 
 app = FastAPI()
 router = ToolRouter()
@@ -36,11 +37,15 @@ async def webhook(request: Request):
         print(f"MESSAGE: {message}")
         print(f"RESULT: {result}")
 
-        intent = result.get("intent", "")
+        detected_lang = result.get("language", "en")
+        intent_result = result.get("intent", "")
+
         if "data" in result:
             reply = format_listings(result["data"])
         else:
             reply = result.get("message", "Done")
+
+        reply = translate_reply(reply, detected_lang)
         send_whatsapp_reply(chat_id, reply)
 
         return {"status": "received", "response": result}
