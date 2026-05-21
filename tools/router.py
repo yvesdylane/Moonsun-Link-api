@@ -1,5 +1,6 @@
 from core.pipeline import AssistantPipeline
-from db.controller.listingController import get_listings
+from db.controller.userController import get_user_role
+from db.controller.listingController import get_listings, create_listing
 
 class ToolRouter:
     def __init__(self):
@@ -22,8 +23,25 @@ class ToolRouter:
         return handler(entities, user_id)
 
     def _create_listing(self, entities, user_id):
-        print(f"creating listing for {entities}")
-        return {"status": "ok", "message": f"creating listings for {entities}"}
+        role = get_user_role(user_id)
+        if role != "farmer":
+            return {"status": "error", "message": "Only farmers can create listings"}
+
+        if not entities.get("product"):
+            return {"status": "error", "message": "What crop do you want to sell?"}
+        if not entities.get("quantity"):
+            return {"status": "error", "message": "How many kg do you want to sell?"}
+        if not entities.get("price"):
+            return {"status": "error", "message": "What is your price per kg in XAF?"}
+
+        return create_listing(
+            user_id=user_id,
+            crop_name=entities.get("product"),
+            quantity=entities.get("quantity"),
+            price=entities.get("price"),
+            town=entities.get("location"),
+            region="General"
+        )
 
     def _search_listings(self, entities, user_id):
         listings = get_listings(
