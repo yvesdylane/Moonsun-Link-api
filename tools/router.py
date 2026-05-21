@@ -24,12 +24,18 @@ class ToolRouter:
     def _create_listing(self, entities):
         print(f"creating listing for {entities}")
         return {"status": "ok", "message": f"creating listings for {entities}"}
+
     def _search_listings(self, entities):
-        listings = get_listings(1)
+        listings = get_listings(
+            crop_name=entities.get("product"),
+            town=entities.get("location"),
+        )
         return {"status": "ok", "data": listings, "filters": entities}
+
     def _get_my_listings(self, entities):
-        print(f"searching listing for {entities}")
-        return {"status": "ok", "message": f"searching listings for {entities}"}
+        # user_id will come from the API layer later
+        listings = get_listings(crop_name=entities.get("product"))
+        return {"status": "ok", "data": listings}
     def _delete_listing(self, entities):
         print(f"delete listing {entities}")
         return {"status": "ok", "message": f"delete listings for {entities}"}

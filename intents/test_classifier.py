@@ -2,6 +2,8 @@ from intents.classifier import IntentClassifier
 from entities.extractor import EntityExtractor
 from core.pipeline import AssistantPipeline
 
+from db.controller.cropController import get_crop_id
+
 clf = IntentClassifier()
 
 tests = [
@@ -38,5 +40,11 @@ tests = [
     "what is the weather today",
 ]
 
-for text in tests:
-    print(pipeline.process(text))
+# for text in tests:
+#     print(pipeline.process(text))
+
+
+
+print(get_crop_id("corn"))    # should return maize's id
+print(get_crop_id("manioc"))  # cassava
+print(get_crop_id("xyz"))     # None
