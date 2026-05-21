@@ -26,3 +26,10 @@ def create_user_from_whatsapp(phone: str, name: str) -> str:
     conn.commit()
     cur.close()
     return user_id
+
+def get_user_role(user_id: str) -> str | None:
+    cur = conn.cursor()
+    cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+    result = cur.fetchone()
+    cur.close()
+    return result[0] if result else None
