@@ -1,5 +1,6 @@
 from db.connect import conn
 from db.controller.cropController import get_crop_id
+from db.controller.userController import get_user_role
 
 def create_listing(user_id: str, crop_name: str, quantity: int, price: int, town: str, region: str):
     crop_id = get_crop_id(crop_name)
@@ -20,12 +21,18 @@ def create_listing(user_id: str, crop_name: str, quantity: int, price: int, town
 
 
 def delete_listing(listing_id: int, user_id: str):
+    role = get_user_role(user_id)
+
     cur = conn.cursor()
-    query = """DELETE FROM listings WHERE id = %s AND user_id = %s RETURNING id"""
-    cur.execute(query, (listing_id, user_id))
+    if role == "admin":
+        cur.execute("DELETE FROM listings WHERE id = %s RETURNING id", (listing_id,))
+    else:
+        cur.execute("DELETE FROM listings WHERE id = %s AND user_id = %s RETURNING id", (listing_id, user_id))
+
     deleted = cur.fetchone()
     conn.commit()
     cur.close()
+
     if not deleted:
         return {"status": "error", "message": "Listing not found or not yours"}
     return {"status": "ok", "message": "Listing deleted"}
