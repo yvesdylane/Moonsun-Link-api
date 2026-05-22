@@ -75,20 +75,25 @@ async def webhook(request: Request):
         # replace the reply section with:
         detected_lang = result.get("language", "en")
         if "data" in result:
-            reply = format_listings(result["data"])
-            image_urls = get_listing_images(result["data"])
+            listings = result["data"]
+            image_listings = get_listing_images(listings)
+            image_ids = {l[8] for l in listings if l[8]}
+
+            # text only for listings without images
+            text_listings = [l for l in listings if not l[8]]
+            if text_listings:
+                reply = format_listings(text_listings)
+                reply = translate_reply(reply, detected_lang)
+                send_whatsapp_reply(chat_id, reply)
+
+            # image listings sent as image + caption
+            for image_url, caption in image_listings:
+                caption = translate_reply(caption, detected_lang)
+                send_whatsapp_image(chat_id, image_url, caption=caption)
         else:
             reply = result.get("message", "Done")
-            image_urls = []
-
-        reply = translate_reply(reply, detected_lang)
-        send_whatsapp_reply(chat_id, reply)
-
-        # send images as attachments
-        for image_url in image_urls:
-            print(f"SENDING IMAGE: {image_url}")
-            response = send_whatsapp_image(chat_id, image_url)
-            print(f"IMAGE SEND RESPONSE: {response}")
+            reply = translate_reply(reply, detected_lang)
+            send_whatsapp_reply(chat_id, reply)
 
         return {"status": "received", "response": result}
 

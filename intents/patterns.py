@@ -38,7 +38,10 @@ INTENT_PATTERNS = {
             "who is selling maize in bafoussam",
             "find tomato sellers near douala",
             "show me cassava listings in yaounde",
-            "i want to browse onion products"
+            "i want to browse onion products",
+            "show me all listings",
+            "show me all products",
+            "show all available listings",
         ]
     },
 
