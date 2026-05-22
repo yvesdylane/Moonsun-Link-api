@@ -7,7 +7,7 @@ class ToolRouter:
     def __init__(self):
         self.pipeline = AssistantPipeline()
 
-    def handle(self, text: str, user_id: str) -> dict:
+    def handle(self, text: str, user_id: str, image_url: str = None) -> dict:
         state = get_state(user_id)
         if state and state["state"] == "awaiting_delete_choice":
             result = self._handle_delete_choice(text, user_id, state["context"])
@@ -20,19 +20,19 @@ class ToolRouter:
         language = pipeline_result["language"]
 
         routes = {
-            "create_listing": self._create_listing,
+            "create_listing":  self._create_listing,
             "search_listings": self._search_listings,
             "get_my_listings": self._get_my_listings,
-            "delete_listing": self._delete_listing,
-            "update_listing": self._update_listing,
+            "delete_listing":  self._delete_listing,
+            "update_listing":  self._update_listing,
         }
 
         handler = routes.get(intent, self._unknown)
-        result = handler(entities, user_id)
+        result = handler(entities, user_id, image_url)
         result["language"] = language
         return result
 
-    def _create_listing(self, entities, user_id):
+    def _create_listing(self, entities, user_id, image_url=None):
         role = get_user_role(user_id)
         if role != "farmer":
             return {"status": "error", "message": "Only farmers can create listings"}
@@ -49,45 +49,43 @@ class ToolRouter:
             quantity=entities.get("quantity"),
             price=entities.get("price"),
             town=entities.get("location"),
-            region="General"
+            region="General",
+            image_url=image_url
         )
 
-    def _search_listings(self, entities, user_id):
+    def _search_listings(self, entities, user_id, image_url=None):
         listings = get_listings(
             crop_name=entities.get("product"),
             town=entities.get("location"),
         )
         return {"status": "ok", "data": listings, "filters": entities}
 
-    def _get_my_listings(self, entities, user_id):
+    def _get_my_listings(self, entities, user_id, image_url=None):
         listings = get_listings(
             crop_name=entities.get("product"),
             user_id=user_id
         )
         return {"status": "ok", "data": listings}
 
-    def _delete_listing(self, entities, user_id):
+    def _delete_listing(self, entities, user_id, image_url=None):
         if not entities.get("product"):
             return {"status": "error", "message": "Which crop listing do you want to delete?"}
 
-        # get all their listings for that crop
         listings = get_listings(crop_name=entities.get("product"), user_id=user_id)
 
         if not listings:
             return {"status": "error", "message": f"You have no {entities.get('product')} listings"}
 
         if len(listings) == 1:
-            # only one — delete directly
             clear_state(user_id)
             return delete_listing(listing_id=listings[0][0], user_id=user_id)
 
-        # multiple listings — ask which one
         options = "\n".join([
             f"{i+1}) {l[3]}kg at {l[4]} XAF"
             for i, l in enumerate(listings)
         ])
         set_state(user_id, "awaiting_delete_choice", {
-            "listings": [[l[0], l[3], l[4]] for l in listings]  # [id, quantity, price]
+            "listings": [[l[0], l[3], l[4]] for l in listings]
         })
         return {"status": "ok", "message": f"Which listing do you want to delete?\n{options}"}
 
@@ -103,8 +101,8 @@ class ToolRouter:
         except ValueError:
             return {"status": "error", "message": f"Please reply with a number between 1 and {len(listings)}"}
 
-    def _update_listing(self, entities, user_id):
+    def _update_listing(self, entities, user_id, image_url=None):
         return {"status": "ok", "message": "Update listing coming soon"}
 
-    def _unknown(self, entities, user_id):
+    def _unknown(self, entities, user_id, image_url=None):
         return {"status": "error", "message": "I didn't understand that. Try asking to sell, find, or delete a listing."}

@@ -1,7 +1,8 @@
 PRODUCTS = [
     "maize", "corn", "cassava", "tomato", "onion",
     "plantain", "yam", "cocoyam", "groundnut", "pepper",
-    "beans", "rice", "sorghum", "palm oil", "banana"
+    "beans", "rice", "sorghum", "palm oil", "banana",
+    "mango"
 ]
 
 LOCATIONS = [
@@ -18,4 +19,5 @@ CROP_SYNONYMS = {
     "peanuts": "groundnut",
     "hot pepper": "pepper",
     "plantains": "plantain",
+    "mangoes": "mango",
 }

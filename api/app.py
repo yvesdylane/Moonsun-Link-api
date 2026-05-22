@@ -6,7 +6,8 @@ from utils.whatsapp import send_whatsapp_reply
 from utils.formatter import format_listings
 from utils.translator import translate_reply
 from utils.transcriber import transcribe_audio
-from utils.audio_downloader import download_voice_note
+from utils.audio_downloader import download_voice_note, download_attachment
+from utils.cloudinary_uploader import upload_image
 import os
 
 app = FastAPI()
@@ -23,7 +24,7 @@ def home():
 @app.post("/whatsapp")
 async def webhook(request: Request):
     data = await request.json()
-
+    print(data)
     if data["event"] == "message_received":
         if data.get("is_sender"):
             return {"status": "ignored"}
@@ -38,21 +39,27 @@ async def webhook(request: Request):
         print(f"EVENT message_id={message_id} is_sender={data.get('is_sender')}")
 
         # handle voice note
-        if not message:
-            attachments = data.get("attachments", [])
-            print(f"ATTACHMENTS: {attachments}")
-            voice = next((a for a in attachments if a.get("voice_note")), None)
-            print(f"VOICE NOTE FOUND: {voice}")
-            if voice:
-                print(f"DOWNLOADING: attachment_id={voice['attachment_id']} message_id={data['message_id']}")
-                file_path = download_voice_note(
-                    attachment_id=voice["attachment_id"],
-                    message_id=data["message_id"]
-                )
-                print(f"DOWNLOADED TO: {file_path}")
-                message = transcribe_audio(file_path)
-                print(f"TRANSCRIBED: {message}")
-                os.unlink(file_path)
+        image_url = None
+        attachments = data.get("attachments", [])
+
+        voice = next((a for a in attachments if a.get("voice_note")), None)
+        image = next((a for a in attachments if a.get("attachment_type") in ("file", "img")), None)
+
+        # handle voice
+        if not message and voice:
+            file_path = download_attachment(voice["attachment_id"], data["message_id"], suffix=".ogg")
+            message = transcribe_audio(file_path)
+            os.unlink(file_path)
+            print(f"TRANSCRIBED: {message}")
+
+        # handle image
+        if image:
+            attachment_name = image.get("attachment_name", "image.jpg")
+            suffix = "." + attachment_name.rsplit(".", 1)[-1]
+            file_path = download_attachment(image["attachment_id"], data["message_id"], suffix=suffix)
+            image_url = upload_image(file_path)
+            os.unlink(file_path)
+            print(f"IMAGE URL: {image_url}")
 
         if not message:
             return {"status": "ignored"}
@@ -61,7 +68,7 @@ async def webhook(request: Request):
         if not exist:
             user_id = create_user_from_whatsapp(phone, name)
 
-        result = router.handle(message, str(user_id))
+        result = router.handle(message, str(user_id), image_url=image_url)
         print(f"MESSAGE: {message}")
         print(f"RESULT: {result}")
 

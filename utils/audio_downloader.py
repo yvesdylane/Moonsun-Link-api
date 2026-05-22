@@ -21,3 +21,13 @@ def download_voice_note(attachment_id: str, message_id: str) -> str:
     tmp.write(response.content)
     tmp.close()
     return tmp.name
+
+def download_attachment(attachment_id: str, message_id: str, suffix: str = ".jpg") -> str:
+    url = f"{UNIPILE_URL}/api/v1/messages/{message_id}/attachments/{attachment_id}"
+    headers = {"X-API-KEY": UNIPILE_TOKEN}
+    response = requests.get(url, headers=headers)
+    print(f"ATTACHMENT DOWNLOAD STATUS: {response.status_code}")
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    tmp.write(response.content)
+    tmp.close()
+    return tmp.name

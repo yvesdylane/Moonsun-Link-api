@@ -2,18 +2,18 @@ from db.connect import conn
 from db.controller.cropController import get_crop_id
 from db.controller.userController import get_user_role
 
-def create_listing(user_id: str, crop_name: str, quantity: int, price: int, town: str, region: str):
+def create_listing(user_id, crop_name, quantity, price, town, region, image_url=None):
     crop_id = get_crop_id(crop_name)
     if not crop_id:
         return {"status": "error", "message": f"Crop '{crop_name}' not found"}
 
     cur = conn.cursor()
     query = """
-        INSERT INTO listings (user_id, crop_id, quantity_kg, price, town, region)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO listings (user_id, crop_id, quantity_kg, price, town, region, image_url)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         RETURNING id
     """
-    cur.execute(query, (user_id, crop_id, quantity, price, town, region))
+    cur.execute(query, (user_id, crop_id, quantity, price, town, region, image_url))
     listing_id = cur.fetchone()[0]
     conn.commit()
     cur.close()
@@ -22,8 +22,8 @@ def create_listing(user_id: str, crop_name: str, quantity: int, price: int, town
 
 def delete_listing(listing_id: int, user_id: str):
     role = get_user_role(user_id)
-
     cur = conn.cursor()
+
     if role == "admin":
         cur.execute("DELETE FROM listings WHERE id = %s RETURNING id", (listing_id,))
     else:
@@ -64,6 +64,7 @@ def update_listing(listing_id: int, user_id: str, quantity: int = None, price: i
     if not updated:
         return {"status": "error", "message": "Listing not found or not yours"}
     return {"status": "ok", "message": "Listing updated"}
+
 
 def get_listings(page=1, limit=10, crop_name=None, town=None, region=None, max_price=None, user_id=None):
     crop_id = get_crop_id(crop_name) if crop_name else None
