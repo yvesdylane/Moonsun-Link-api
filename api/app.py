@@ -5,6 +5,9 @@ from db.controller.userController import check_if_user_exist, create_user_from_w
 from utils.whatsapp import send_whatsapp_reply
 from utils.formatter import format_listings
 from utils.translator import translate_reply
+from utils.transcriber import transcribe_audio
+from utils.audio_downloader import download_voice_note
+import os
 
 app = FastAPI()
 router = ToolRouter()
@@ -24,10 +27,33 @@ async def webhook(request: Request):
     if data["event"] == "message_received":
         if data.get("is_sender"):
             return {"status": "ignored"}
+
         phone = data["sender"]["attendee_specifics"]["phone_number"]
         name = data["sender"]["attendee_name"]
-        message = data["message"]
         chat_id = data["chat_id"]
+
+        # get message text
+        message = data.get("message")
+
+        # handle voice note
+        if not message:
+            attachments = data.get("attachments", [])
+            print(f"ATTACHMENTS: {attachments}")
+            voice = next((a for a in attachments if a.get("voice_note")), None)
+            print(f"VOICE NOTE FOUND: {voice}")
+            if voice:
+                print(f"DOWNLOADING: attachment_id={voice['attachment_id']} message_id={data['message_id']}")
+                file_path = download_voice_note(
+                    attachment_id=voice["attachment_id"],
+                    message_id=data["message_id"]
+                )
+                print(f"DOWNLOADED TO: {file_path}")
+                message = transcribe_audio(file_path)
+                print(f"TRANSCRIBED: {message}")
+                os.unlink(file_path)
+
+        if not message:
+            return {"status": "ignored"}
 
         exist, user_id = check_if_user_exist(phone)
         if not exist:
@@ -38,8 +64,6 @@ async def webhook(request: Request):
         print(f"RESULT: {result}")
 
         detected_lang = result.get("language", "en")
-        intent_result = result.get("intent", "")
-
         if "data" in result:
             reply = format_listings(result["data"])
         else:
