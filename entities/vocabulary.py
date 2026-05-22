@@ -21,3 +21,9 @@ CROP_SYNONYMS = {
     "plantains": "plantain",
     "mangoes": "mango",
 }
+
+REGIONS = [
+    "Adamaoua", "Centre", "Est", "Extreme-Nord",
+    "Littoral", "Nord", "Nord-Ouest",
+    "Ouest", "Sud", "Sud-Ouest", "General"
+]

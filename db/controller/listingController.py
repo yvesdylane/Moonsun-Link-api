@@ -38,22 +38,15 @@ def delete_listing(listing_id: int, user_id: str):
     return {"status": "ok", "message": "Listing deleted"}
 
 
-def update_listing(listing_id: int, user_id: str, quantity: int = None, price: int = None):
-    fields = []
-    values = []
-
-    if quantity:
-        fields.append("quantity_kg = %s")
-        values.append(quantity)
-    if price:
-        fields.append("price = %s")
-        values.append(price)
-
-    if not fields:
+def update_listing(listing_id: int, user_id: str, updates: dict):
+    if not updates:
         return {"status": "error", "message": "Nothing to update"}
 
+    fields = [f"{key} = %s" for key in updates.keys()]
+    values = list(updates.values())
     values.extend([listing_id, user_id])
-    query = f"UPDATE listings SET {', '.join(fields)} WHERE id = %s AND user_id = %s RETURNING id"
+
+    query = f"UPDATE listings SET {', '.join(fields)}, updated_at = NOW() WHERE id = %s AND user_id = %s RETURNING id"
 
     cur = conn.cursor()
     cur.execute(query, values)
@@ -63,7 +56,7 @@ def update_listing(listing_id: int, user_id: str, quantity: int = None, price: i
 
     if not updated:
         return {"status": "error", "message": "Listing not found or not yours"}
-    return {"status": "ok", "message": "Listing updated"}
+    return {"status": "ok", "message": "Listing updated successfully"}
 
 
 def get_listings(page=1, limit=10, crop_name=None, town=None, region=None, max_price=None, user_id=None):
