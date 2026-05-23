@@ -58,7 +58,6 @@ def update_listing(listing_id: int, user_id: str, updates: dict):
         return {"status": "error", "message": "Listing not found or not yours"}
     return {"status": "ok", "message": "Listing updated successfully"}
 
-
 def get_listings(page=1, limit=10, crop_name=None, town=None, region=None, max_price=None, user_id=None):
     crop_id = get_crop_id(crop_name) if crop_name else None
 
@@ -66,27 +65,47 @@ def get_listings(page=1, limit=10, crop_name=None, town=None, region=None, max_p
     values = []
 
     if crop_id:
-        filters.append("crop_id = %s")
+        filters.append("l.crop_id = %s")
         values.append(crop_id)
     if town:
-        filters.append("town ILIKE %s")
+        filters.append("l.town ILIKE %s")
         values.append(f"%{town}%")
     if region:
-        filters.append("region = %s")
+        filters.append("l.region = %s")
         values.append(region)
     if max_price:
-        filters.append("price <= %s")
+        filters.append("l.price <= %s")
         values.append(max_price)
     if user_id:
-        filters.append("user_id = %s")
+        filters.append("l.user_id = %s")
         values.append(user_id)
 
     where = f"WHERE {' AND '.join(filters)}" if filters else ""
     offset = (page - 1) * limit
-    values.extend([limit, offset])
 
     cur = conn.cursor()
-    cur.execute(f"SELECT * FROM listings {where} LIMIT %s OFFSET %s", values)
+
+    # get total count
+    cur.execute(f"SELECT COUNT(*) FROM listings l {where}", values)
+    total = cur.fetchone()[0]
+
+    # get page
+    cur.execute(f"""
+        SELECT l.*, c.name as crop_name
+        FROM listings l
+        JOIN crops c ON l.crop_id = c.id
+        {where}
+        LIMIT %s OFFSET %s
+    """, values + [limit, offset])
+
     listings = cur.fetchall()
     cur.close()
-    return listings
+
+    total_pages = (total + limit - 1) // limit
+
+    return {
+        "listings": listings,
+        "page": page,
+        "total_pages": total_pages,
+        "total": total
+    }

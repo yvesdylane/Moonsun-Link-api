@@ -76,12 +76,14 @@ async def webhook(request: Request):
         # reply section
         detected_lang = result.get("language", "en")
         if "data" in result:
-            listings = result["data"]
-            image_listings = get_listing_images(listings)
+            data = result["data"]
+            listings = data["listings"]
+            image_listings = get_listing_images(data)
             text_listings = [l for l in listings if not l[8]]
 
             if text_listings:
-                reply = format_listings(text_listings)
+                text_data = {**data, "listings": text_listings}
+                reply = format_listings(text_data)
                 reply = translate_reply(reply, detected_lang)
                 send_whatsapp_reply(chat_id, reply)
 
@@ -89,7 +91,7 @@ async def webhook(request: Request):
                 caption = translate_reply(caption, detected_lang)
                 send_whatsapp_image(chat_id, image_url, caption=caption)
 
-            full_reply = format_listings(listings)
+            full_reply = format_listings(data)
         else:
             reply = result.get("message", "Done")
             reply = translate_reply(reply, detected_lang)

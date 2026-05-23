@@ -9,6 +9,7 @@ class ToolRouter:
 
     def handle(self, text: str, user_id: str, image_url: str = None) -> dict:
         state = get_state(user_id)
+
         if state and state["state"] == "awaiting_delete_choice":
             result = self._handle_delete_choice(text, user_id, state["context"])
             result["language"] = "en"
@@ -19,17 +20,27 @@ class ToolRouter:
             result["language"] = "en"
             return result
 
+        if state and state["state"] == "browsing_listings":
+            if text.strip().lower() in ("next", "suivant"):
+                result = self._browse_page(user_id, state["context"], direction=1)
+                result["language"] = state["context"].get("language", "en")
+                return result
+            elif text.strip().lower() in ("previous", "prev", "précédent", "retour"):
+                result = self._browse_page(user_id, state["context"], direction=-1)
+                result["language"] = state["context"].get("language", "en")
+                return result
+
         pipeline_result = self.pipeline.process(text)
         intent = pipeline_result["intent"]["intent"]
         entities = pipeline_result["entities"]
         language = pipeline_result["language"]
 
         routes = {
-            "create_listing":  self._create_listing,
+            "create_listing": self._create_listing,
             "search_listings": self._search_listings,
             "get_my_listings": self._get_my_listings,
-            "delete_listing":  self._delete_listing,
-            "update_listing":  self._update_listing,
+            "delete_listing": self._delete_listing,
+            "update_listing": self._update_listing,
         }
 
         handler = routes.get(intent, self._unknown)
@@ -59,18 +70,39 @@ class ToolRouter:
         )
 
     def _search_listings(self, entities, user_id, image_url=None):
-        listings = get_listings(
-            crop_name=entities.get("product"),
-            town=entities.get("location"),
-        )
-        return {"status": "ok", "data": listings, "filters": entities}
+        filters = {
+            "crop_name": entities.get("product"),
+            "town": entities.get("location"),
+        }
+        result = get_listings(page=1, **filters)
+        if result["total_pages"] > 1:
+            set_state(user_id, "browsing_listings", {
+                "filters": filters,
+                "page": 1,
+                "user_id": None
+            })
+        return {"status": "ok", "data": result}
 
     def _get_my_listings(self, entities, user_id, image_url=None):
-        listings = get_listings(
-            crop_name=entities.get("product"),
-            user_id=user_id
-        )
-        return {"status": "ok", "data": listings}
+        filters = {"crop_name": entities.get("product"), "user_id": user_id}
+        result = get_listings(page=1, **filters)
+        if result["total_pages"] > 1:
+            set_state(user_id, "browsing_listings", {
+                "filters": filters,
+                "page": 1,
+            })
+        return {"status": "ok", "data": result}
+
+    def _browse_page(self, user_id: str, context: dict, direction: int) -> dict:
+        page = context["page"] + direction
+        filters = context["filters"]
+        result = get_listings(page=page, **filters)
+        if page >= result["total_pages"]:
+            clear_state(user_id)
+        else:
+            context["page"] = page
+            set_state(user_id, "browsing_listings", context)
+        return {"status": "ok", "data": result}
 
     def _delete_listing(self, entities, user_id, image_url=None):
         if not entities.get("product"):
