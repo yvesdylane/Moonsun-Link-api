@@ -79,9 +79,9 @@ class ToolRouter:
             set_state(user_id, "browsing_listings", {
                 "filters": filters,
                 "page": 1,
-                "user_id": None
+                "show_seller": True
             })
-        return {"status": "ok", "data": result}
+        return {"status": "ok", "data": result, "show_seller": True}
 
     def _get_my_listings(self, entities, user_id, image_url=None):
         filters = {"crop_name": entities.get("product"), "user_id": user_id}
@@ -90,8 +90,9 @@ class ToolRouter:
             set_state(user_id, "browsing_listings", {
                 "filters": filters,
                 "page": 1,
+                "show_seller": False
             })
-        return {"status": "ok", "data": result}
+        return {"status": "ok", "data": result, "show_seller": False}
 
     def _browse_page(self, user_id: str, context: dict, direction: int) -> dict:
         page = context["page"] + direction

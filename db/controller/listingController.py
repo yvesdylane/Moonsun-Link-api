@@ -91,9 +91,10 @@ def get_listings(page=1, limit=10, crop_name=None, town=None, region=None, max_p
 
     # get page
     cur.execute(f"""
-        SELECT l.*, c.name as crop_name
+        SELECT l.*, c.name as crop_name, u.name as seller_name
         FROM listings l
         JOIN crops c ON l.crop_id = c.id
+        JOIN users u ON l.user_id = u.id
         {where}
         LIMIT %s OFFSET %s
     """, values + [limit, offset])
