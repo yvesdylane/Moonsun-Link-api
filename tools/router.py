@@ -2,6 +2,8 @@ from core.pipeline import AssistantPipeline
 from db.controller.userController import get_user_role
 from db.controller.listingController import get_listings, create_listing, delete_listing, update_listing
 from db.controller.stateController import get_state, set_state, clear_state
+from utils.formatter import format_listing_item
+
 
 class ToolRouter:
     def __init__(self):
@@ -59,7 +61,7 @@ class ToolRouter:
         if not entities.get("price"):
             return {"status": "error", "message": "What is your price per kg in XAF?"}
 
-        return create_listing(
+        result = create_listing(
             user_id=user_id,
             crop_name=entities.get("product"),
             quantity=entities.get("quantity"),
@@ -68,6 +70,11 @@ class ToolRouter:
             region="General",
             image_url=image_url
         )
+
+        if result["status"] == "error":
+            return result
+
+        return self._listing_preview(result["listing_id"], user_id)
 
     def _search_listings(self, entities, user_id, image_url=None):
         filters = {
@@ -143,12 +150,12 @@ class ToolRouter:
         if not entities.get("product"):
             return {"status": "error", "message": "Which crop listing do you want to update?"}
 
-        listings = get_listings(crop_name=entities.get("product"), user_id=user_id)
+        result = get_listings(crop_name=entities.get("product"), user_id=user_id)
+        listings = result["listings"]
 
         if not listings:
             return {"status": "error", "message": f"You have no {entities.get('product')} listings"}
 
-        # build update fields from entities
         updates = {}
         if entities.get("price"):
             updates["price"] = entities.get("price")
@@ -169,9 +176,11 @@ class ToolRouter:
 
         if len(listings) == 1:
             clear_state(user_id)
-            return update_listing(listing_id=listings[0][0], user_id=user_id, updates=updates)
+            update_result = update_listing(listing_id=listings[0][0], user_id=user_id, updates=updates)
+            if update_result["status"] == "error":
+                return update_result
+            return self._listing_preview(listings[0][0], user_id)
 
-        # multiple listings — ask which one
         options = "\n".join([
             f"{i + 1}) {l[3]}kg at {l[4]} XAF"
             for i, l in enumerate(listings)
@@ -191,9 +200,25 @@ class ToolRouter:
                 return {"status": "error", "message": f"Please reply with a number between 1 and {len(listings)}"}
             listing_id = listings[choice][0]
             clear_state(user_id)
-            return update_listing(listing_id=listing_id, user_id=user_id, updates=updates)
+            update_result = update_listing(listing_id=listing_id, user_id=user_id, updates=updates)
+            if update_result["status"] == "error":
+                return update_result
+            return self._listing_preview(listing_id, user_id)
         except ValueError:
             return {"status": "error", "message": f"Please reply with a number between 1 and {len(listings)}"}
 
+    def _listing_preview(self, listing_id: int, user_id: str) -> dict:
+        result = get_listings(page=1, limit=1, user_id=user_id)
+        # find the specific listing by id
+        listing = next((l for l in result["listings"] if l[0] == listing_id), None)
+        if listing:
+            return {
+                "status": "ok",
+                "message": f"✅ Listing updated! Here is how it looks to buyers:\n\n{format_listing_item(listing, show_seller=False)}",
+                "preview_image": listing[8],
+            }
+        return {"status": "ok", "message": "✅ Listing updated successfully"}
+
     def _unknown(self, entities, user_id, image_url=None):
         return {"status": "error", "message": "I didn't understand that. Try asking to sell, find, or delete a listing."}
+

@@ -75,7 +75,11 @@ async def webhook(request: Request):
 
         # reply section
         detected_lang = result.get("language", "en")
-        if "data" in result:
+        if result.get("preview_image"):
+            reply = result.get("message", "Done")
+            reply = translate_reply(reply, detected_lang)
+            send_whatsapp_image(chat_id, result["preview_image"], caption=reply)
+        elif "data" in result:
             data = result["data"]
             show_seller = result.get("show_seller", False)
             listings = data["listings"]

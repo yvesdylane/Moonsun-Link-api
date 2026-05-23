@@ -96,6 +96,7 @@ def get_listings(page=1, limit=10, crop_name=None, town=None, region=None, max_p
         JOIN crops c ON l.crop_id = c.id
         JOIN users u ON l.user_id = u.id
         {where}
+        ORDER BY l.created_at DESC
         LIMIT %s OFFSET %s
     """, values + [limit, offset])
 
