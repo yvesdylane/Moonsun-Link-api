@@ -43,12 +43,28 @@ class ToolRouter:
             "get_my_listings": self._get_my_listings,
             "delete_listing": self._delete_listing,
             "update_listing": self._update_listing,
+            "greeting": self._greeting,
         }
 
         handler = routes.get(intent, self._unknown)
         result = handler(entities, user_id, image_url)
         result["language"] = language
         return result
+
+    def _greeting(self, entities, user_id, image_url=None):
+        return {
+            "status": "ok",
+            "message": (
+                "👋 Hello! Welcome to Moonso Link.\n\n"
+                "Here's what I can help you with:\n"
+                "🌾 *Sell a product* — 'I want to sell 50kg of corn at 200 XAF'\n"
+                "🔍 *Find products* — 'Find tomatoes in Douala'\n"
+                "📋 *My listings* — 'Show me my listings'\n"
+                "🗑️ *Delete listing* — 'Delete my corn listing'\n"
+                "✏️ *Update listing* — 'Update my corn price to 300 XAF'\n\n"
+                "Just send a message or voice note 🎙️"
+            )
+        }
 
     def _create_listing(self, entities, user_id, image_url=None):
         role = get_user_role(user_id)

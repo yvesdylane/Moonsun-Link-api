@@ -6,9 +6,13 @@ from tools.router import ToolRouter
 from db.controller.userController import check_if_user_exist_by_telegram, create_user_from_telegram
 from utils.formatter import format_listings, get_listing_images
 from utils.translator import translate_reply
+from utils.transcriber import transcribe_audio
+from utils.audio_downloader import download_attachment
+import tempfile
 
 router = ToolRouter()
 LOGO_PATH = Path("Assets/logo.jpg")
+MARKET_URL = "https://placeholder.moonso.app"  # replace when ready
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -32,6 +36,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🌱 Create account", callback_data="register")],
         [InlineKeyboardButton("🔗 Link WhatsApp account", callback_data="link_account")],
         [InlineKeyboardButton("💬 Start chatting", callback_data="guest")],
+        [InlineKeyboardButton("🛒 Open Marketplace", web_app={"url": MARKET_URL})],
     ])
 
     caption = (
@@ -49,7 +54,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=keyboard
         )
-
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -88,7 +92,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "You can now sell products, check prices and manage your listings.\n"
             "Just send me a message to get started!"
         )
-
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -145,13 +148,43 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = router.handle(message, str(user_id) if user_id else None)
     await send_telegram_reply(update, result)
 
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    telegram_id = str(user.id)
+    state = context.user_data.get("state")
+
+    exist, user_id = check_if_user_exist_by_telegram(telegram_id)
+    if not exist and state != "guest":
+        await update.message.reply_text("Send /start to get started 🌾")
+        return
+
+    # download voice file from Telegram
+    voice = update.message.voice
+    file = await context.bot.get_file(voice.file_id)
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".ogg", delete=False)
+    await file.download_to_drive(tmp.name)
+    tmp.close()
+
+    try:
+        message = transcribe_audio(tmp.name)
+        print(f"TELEGRAM TRANSCRIBED: {message}")
+    finally:
+        os.unlink(tmp.name)
+
+    result = router.handle(message, str(user_id) if user_id else None)
+    await send_telegram_reply(update, result)
 
 async def send_telegram_reply(update: Update, result: dict):
     detected_lang = result.get("language", "en")
 
     if result.get("preview_image"):
         reply = translate_reply(result.get("message", "Done"), detected_lang)
-        await update.message.reply_photo(photo=result["preview_image"], caption=reply)
+        await update.message.reply_photo(
+            photo=result["preview_image"],
+            caption=reply,
+            reply_markup=market_button()
+        )
 
     elif "data" in result:
         data = result["data"]
@@ -168,11 +201,9 @@ async def send_telegram_reply(update: Update, result: dict):
                 keyboard.append(InlineKeyboardButton("◀ Previous", callback_data="prev"))
             if data["page"] < data["total_pages"]:
                 keyboard.append(InlineKeyboardButton("Next ▶", callback_data="next"))
-            if keyboard:
-                markup = InlineKeyboardMarkup([keyboard])
-                await update.message.reply_text(reply, reply_markup=markup)
-            else:
-                await update.message.reply_text(reply)
+            keyboard_rows = [keyboard] if keyboard else []
+            keyboard_rows.append([InlineKeyboardButton("🛒 Open Marketplace", web_app={"url": MARKET_URL})])
+            await update.message.reply_text(reply, reply_markup=InlineKeyboardMarkup(keyboard_rows))
 
         for image_url, caption in image_listings:
             caption = translate_reply(caption, detected_lang)
@@ -180,10 +211,22 @@ async def send_telegram_reply(update: Update, result: dict):
 
     else:
         reply = translate_reply(result.get("message", "Done"), detected_lang)
-        await update.message.reply_text(reply)
-
+        await update.message.reply_text(reply, reply_markup=market_button())
 
 def setup_handlers(app: Application):
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("market", market))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+
+def market_button():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🛒 Open Marketplace", web_app={"url": MARKET_URL})]
+    ])
+
+async def market(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🛒 Open the Moonso Link marketplace:",
+        reply_markup=market_button()
+    )

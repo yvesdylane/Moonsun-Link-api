@@ -81,4 +81,18 @@ INTENT_PATTERNS = {
             "help me delete my listing"
         ]
     },
+
+    "greeting": {
+        "keywords": [
+            "hello", "hi", "hey", "good morning", "good evening",
+            "good afternoon", "howdy", "what's up", "sup"
+        ],
+        "examples": [
+            "hello there",
+            "hi how are you",
+            "good morning",
+            "hey what's up",
+            "hi I need help",
+        ]
+    },
 }

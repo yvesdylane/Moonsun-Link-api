@@ -28,7 +28,17 @@ def format_listings(result: dict, show_seller: bool = False) -> str:
     total = result["total"]
 
     if not listings:
-        return "No listings found."
+        if show_seller:
+            return (
+                "😕 No listings found for that search.\n\n"
+                "Try a different product or location, or check back later!"
+            )
+        else:
+            return (
+                "📭 You don't have any listings yet.\n\n"
+                "Send me a message like:\n"
+                "'I want to sell 50kg of corn at 200 XAF'"
+            )
 
     lines = [f"📄 Page {page}/{total_pages} — {total} listing(s)\n"]
     lines += [f"{i+1}) {format_listing_item(l, show_seller=show_seller)}" for i, l in enumerate(listings)]
