@@ -60,6 +60,9 @@ class ToolRouter:
             "update_profile": self._update_profile,
             "show_available_products": self._show_available_products,
             "product_locations": self._product_locations,
+            "show_interest": self._show_interest,
+            "view_listing_interests": self._view_listing_interests,
+            "search_by_price": self._search_by_price,
         }
 
         handler = routes.get(intent, self._unknown)
@@ -150,6 +153,16 @@ class ToolRouter:
         }
 
         result = get_listings(page=1, **filters)
+
+        # Store listing IDs in state for interest tracking
+        if result["total"] > 0:
+            listing_ids = [listing[0] for listing in result["listings"]]
+            set_state(user_id, "viewing_listings", {
+                "listing_ids": listing_ids,
+                "filters": filters,
+                "page": 1,
+                "show_seller": True
+            })
 
         # If no results and product was specified, provide helpful feedback
         if result["total"] == 0 and entities.get("product"):
@@ -549,6 +562,193 @@ class ToolRouter:
             "status": "ok",
             "message": f"🌾 *{product.capitalize()}* ({count_text})\n\nCurrently being sold in:\n\n{locations_formatted}\n\nTo see listings, send: 'Find {product}'"
         }
+
+    def _show_interest(self, entities, user_id, image_url=None):
+        from db.controller.listingInterestController import save_interest
+        from db.controller.userController import get_user_info
+        from utils.whatsapp import send_whatsapp_reply
+        import re
+
+        # Parse listing number and quantity from text
+        # Expected: "interested in 40kg of listing 5" or "i want listing 3"
+        state = get_state(user_id)
+
+        if not state or "listing_ids" not in state.get("context", {}):
+            return {
+                "status": "error",
+                "message": "Please search for listings first.\n\nExample: 'Find corn in Douala'"
+            }
+
+        listing_ids = state["context"]["listing_ids"]
+
+        # Extract listing number from entities or text
+        listing_number = entities.get("listing_number")
+        quantity = entities.get("quantity") or 1  # Default to 1kg if not specified
+
+        if not listing_number:
+            return {
+                "status": "error",
+                "message": "Which listing are you interested in?\n\nExample: 'I'm interested in 40kg of listing #2'"
+            }
+
+        # Validate listing number
+        try:
+            listing_index = int(listing_number) - 1
+            if listing_index < 0 or listing_index >= len(listing_ids):
+                return {
+                    "status": "error",
+                    "message": f"Invalid listing number. Please choose between 1 and {len(listing_ids)}."
+                }
+        except (ValueError, TypeError):
+            return {
+                "status": "error",
+                "message": "Please provide a valid listing number.\n\nExample: 'interested in listing 2'"
+            }
+
+        listing_id = listing_ids[listing_index]
+
+        # Save interest
+        result = save_interest(listing_id, user_id, quantity)
+
+        if result["status"] == "error":
+            return result
+
+        # Send notification to seller
+        listing = result["listing"]
+        buyer = get_user_info(user_id)
+
+        if listing.get("seller_whatsapp"):
+            notification = (
+                f"🔔 *New Interest in Your Listing!*\n\n"
+                f"👤 Buyer: {buyer.name}\n"
+                f"📞 Phone: {buyer.phone}\n"
+                f"🌾 Product: {listing['crop_name'].capitalize()}\n"
+                f"📦 Interested in: {quantity}kg\n"
+                f"💰 Your price: {listing['price']} XAF/kg\n\n"
+                f"Contact them to complete the sale!"
+            )
+            # We need chat_id for seller - will be handled in webhook
+            # For now, just store and farmer can view interests
+
+        clear_state(user_id)
+
+        return {
+            "status": "ok",
+            "message": (
+                f"✅ Interest registered!\n\n"
+                f"You're interested in {quantity}kg of {listing['crop_name']}\n"
+                f"💰 Price: {listing['price']} XAF/kg\n"
+                f"👤 Seller: {listing['seller_name']}\n\n"
+                f"The seller has been notified. They may contact you at {buyer.phone}"
+            ),
+            "seller_notification": {
+                "seller_whatsapp": listing.get("seller_whatsapp"),
+                "message": notification if listing.get("seller_whatsapp") else None
+            }
+        }
+
+    def _view_listing_interests(self, entities, user_id, image_url=None):
+        from db.controller.listingInterestController import get_listing_interests
+        from db.controller.userController import get_user_info
+
+        user = get_user_info(user_id)
+        if not user or not user.is_farmer():
+            return {
+                "status": "error",
+                "message": "Only farmers can view interests on their listings."
+            }
+
+        crop_name = entities.get("product")
+        result = get_listing_interests(user_id, crop_name)
+
+        if result["total"] == 0:
+            return {
+                "status": "ok",
+                "message": result["message"]
+            }
+
+        # Format interests
+        lines = [f"👥 *Interests on Your Listings* ({result['total']} total)\n"]
+
+        for listing_id, data in result["listings"].items():
+            lines.append(f"🌾 *{data['crop_name'].capitalize()}* - {data['quantity_kg']}kg at {data['price']} XAF/kg")
+
+            for interest in data["interests"]:
+                lines.append(f"  • {interest['buyer_name']} ({interest['buyer_phone']})")
+                lines.append(f"    Wants: {interest['quantity']}kg")
+                if interest.get("message"):
+                    lines.append(f"    Message: {interest['message']}")
+                lines.append("")
+
+        return {
+            "status": "ok",
+            "message": "\n".join(lines)
+        }
+
+    def _search_by_price(self, entities, user_id, image_url=None):
+        from db.controller.listingController import search_by_price
+
+        product = entities.get("product")
+        price = entities.get("price")
+
+        if not product:
+            return {
+                "status": "error",
+                "message": "Which product are you looking for?\n\nExample: 'Is anyone selling corn at 300 XAF?'"
+            }
+
+        if not price:
+            return {
+                "status": "error",
+                "message": "What price are you looking for?\n\nExample: 'Find tomatoes at 200 XAF'"
+            }
+
+        result = search_by_price(product, price)
+
+        if result["status"] == "not_found":
+            return {
+                "status": "ok",
+                "message": result["message"]
+            }
+
+        if result["status"] == "ok":
+            # Found close matches
+            listing_ids = [listing[0] for listing in result["listings"]]
+            set_state(user_id, "viewing_listings", {
+                "listing_ids": listing_ids,
+                "page": 1,
+                "show_seller": True
+            })
+
+            listings_data = {
+                "listings": result["listings"],
+                "page": 1,
+                "total_pages": 1,
+                "total": len(result["listings"])
+            }
+
+            return {
+                "status": "ok",
+                "data": listings_data,
+                "show_seller": True,
+                "message_prefix": f"💰 Found {len(result['listings'])} listing(s) near {price} XAF:\n\n"
+            }
+
+        if result["status"] == "alternatives":
+            # Show nearest prices
+            nearest_text = "\n".join([
+                f"• {p['price']} XAF ({p['count']} listing{'s' if p['count'] > 1 else ''})"
+                for p in result["nearest_prices"]
+            ])
+
+            return {
+                "status": "ok",
+                "message": (
+                    f"⚠️ No listings at exactly {price} XAF for {product}\n\n"
+                    f"Nearest available prices:\n{nearest_text}\n\n"
+                    f"To see listings, send: 'Find {product}'"
+                )
+            }
 
     def _unknown(self, entities, user_id, image_url=None):
         return {"status": "error", "message": "I didn't understand that. Try asking to sell, find, or delete a listing."}

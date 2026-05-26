@@ -290,3 +290,87 @@ def check_product_exists(crop_name: str, region: str = None, max_price: int = No
 
     cur.close()
     return feedback
+
+def search_by_price(crop_name: str, target_price: int, tolerance: int = 50) -> dict:
+    """
+    Search for listings at or near a specific price point.
+
+    Args:
+        crop_name: Name of the crop/product
+        target_price: Desired price per kg
+        tolerance: Price difference tolerance (default: 50 XAF)
+
+    Returns:
+        dict with exact matches or nearest alternatives
+    """
+    from db.controller.cropController import get_crop_id
+
+    crop_id = get_crop_id(crop_name)
+    if not crop_id:
+        return {"status": "error", "message": f"Product '{crop_name}' not recognized"}
+
+    cur = conn.cursor()
+
+    # Check if product exists at all
+    cur.execute("""
+        SELECT COUNT(*)
+        FROM listings l
+        JOIN users u ON l.user_id = u.id
+        WHERE l.crop_id = %s AND u.verified = 'true'
+    """, (crop_id,))
+
+    total_count = cur.fetchone()[0]
+
+    if total_count == 0:
+        cur.close()
+        return {
+            "status": "not_found",
+            "message": f"No one is currently selling {crop_name}"
+        }
+
+    # Search for exact or close matches
+    cur.execute("""
+        SELECT l.*, c.name as crop_name, u.name as seller_name,
+               ABS(l.price - %s) as price_diff
+        FROM listings l
+        JOIN crops c ON l.crop_id = c.id
+        JOIN users u ON l.user_id = u.id
+        WHERE l.crop_id = %s
+          AND u.verified = 'true'
+          AND l.price BETWEEN %s AND %s
+        ORDER BY price_diff ASC, l.created_at DESC
+        LIMIT 10
+    """, (target_price, crop_id, target_price - tolerance, target_price + tolerance))
+
+    close_matches = cur.fetchall()
+
+    if close_matches:
+        cur.close()
+        return {
+            "status": "ok",
+            "match_type": "close",
+            "target_price": target_price,
+            "listings": close_matches,
+            "message": f"Found {len(close_matches)} listing(s) near {target_price} XAF"
+        }
+
+    # No close matches - find nearest alternatives
+    cur.execute("""
+        SELECT l.price, COUNT(*) as count
+        FROM listings l
+        JOIN users u ON l.user_id = u.id
+        WHERE l.crop_id = %s AND u.verified = 'true'
+        GROUP BY l.price
+        ORDER BY ABS(l.price - %s) ASC
+        LIMIT 3
+    """, (crop_id, target_price))
+
+    nearest_prices = cur.fetchall()
+    cur.close()
+
+    return {
+        "status": "alternatives",
+        "target_price": target_price,
+        "nearest_prices": [{"price": row[0], "count": row[1]} for row in nearest_prices],
+        "message": f"No listings at {target_price} XAF, but here are the nearest prices"
+    }

@@ -33,7 +33,10 @@ Available intents:
 10. update_profile - User wants to update their name or region
 11. show_available_products - User asks what products are available/listed
 12. product_locations - User asks where a specific product is being sold
-13. unknown - None of the above match
+13. show_interest - User expresses interest in a specific listing number
+14. view_listing_interests - Farmer wants to see buyer interests on their listings
+15. search_by_price - User searches for product at specific price
+16. unknown - None of the above match
 
 Extract entities:
 - product: crop name (maize, cassava, tomato, onion, plantain, yam, etc.)
@@ -42,6 +45,7 @@ Extract entities:
 - location: town/city name
 - region: region name (Littoral, Centre, Ouest, Nord, Sud, Adamaoua, Est, Extreme-Nord, Nord-Ouest, Sud-Ouest)
 - name: person's name (for profile updates)
+- listing_number: listing number user is interested in (numeric, from phrases like "listing 5", "#3", "number 2")
 
 Respond ONLY with valid JSON in this exact format:
 {
@@ -53,7 +57,8 @@ Respond ONLY with valid JSON in this exact format:
         "price": 300,
         "location": "Douala",
         "region": "Littoral",
-        "name": null
+        "name": null,
+        "listing_number": null
     }
 }
 
@@ -66,7 +71,10 @@ Rules:
 - For "change_role", look for: become farmer, switch to farmer, upgrade to farmer, change role
 - For "show_available_products", look for: what products, available products, list products, what's available
 - For "product_locations", look for: where is X, where can I find X, where to buy X
-- For "search_listings", user specifies criteria (location, price, etc.) - differs from product_locations which asks general availability"""
+- For "search_listings", user specifies criteria (location, price, etc.) - differs from product_locations which asks general availability
+- For "show_interest", extract listing_number from: "listing 5", "number 3", "#2", "the 4th one"
+- For "search_by_price", user asks if anyone is selling product at specific price
+- For "view_listing_interests", farmer asks to see buyer interests"""
 
         try:
             response = self.client.chat.completions.create(

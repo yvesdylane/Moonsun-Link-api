@@ -81,6 +81,15 @@ async def webhook(request: Request):
         print(f"MESSAGE: {message}")
         print(f"RESULT: {result}")
 
+        # Handle seller notification for interests
+        if result.get("seller_notification"):
+            seller_notif = result["seller_notification"]
+            if seller_notif.get("seller_whatsapp") and seller_notif.get("message"):
+                # Try to send notification to seller
+                # Note: We need to find seller's chat_id
+                # For now, farmer can check interests via "view my listing interests"
+                pass
+
         # reply section
         detected_lang = result.get("language", "en")
         if result.get("preview_image"):

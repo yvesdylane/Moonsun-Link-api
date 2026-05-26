@@ -200,4 +200,53 @@ INTENT_PATTERNS = {
             "where to buy onions"
         ]
     },
+
+    "show_interest": {
+        "keywords": [
+            "interested in",
+            "i want listing",
+            "buy listing",
+            "interested in number",
+            "want to buy"
+        ],
+        "examples": [
+            "I'm interested in 40kg of listing 5",
+            "I want listing number 3",
+            "interested in the 2nd listing",
+            "I want to buy listing 1",
+            "interested in 50kg from number 4"
+        ]
+    },
+
+    "view_listing_interests": {
+        "keywords": [
+            "interests on my listings",
+            "who is interested",
+            "show interests",
+            "buyer interest",
+            "interests in my products"
+        ],
+        "examples": [
+            "show interests on my listings",
+            "who is interested in my corn",
+            "view buyer interests",
+            "show me interests on my products",
+            "any interests in my listings"
+        ]
+    },
+
+    "search_by_price": {
+        "keywords": [
+            "at this price",
+            "selling at",
+            "price of",
+            "anyone selling for"
+        ],
+        "examples": [
+            "is anyone selling corn at 300 XAF",
+            "find tomatoes at 200 XAF",
+            "anyone selling maize for 250",
+            "corn at 400 XAF per kg"
+        ]
+    },
 }

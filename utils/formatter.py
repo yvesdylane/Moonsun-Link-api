@@ -1,4 +1,4 @@
-def format_listing_item(listing: tuple, show_seller: bool = False) -> str:
+def format_listing_item(listing: tuple, show_seller: bool = False, listing_number: int = None) -> str:
     crop_name = listing[12].capitalize()
     quantity = listing[3]
     price = listing[4]
@@ -9,7 +9,10 @@ def format_listing_item(listing: tuple, show_seller: bool = False) -> str:
     expires_at = listing[9].strftime("%d %b %Y")
 
     # index 13 = seller_name (only present when show_seller=True)
-    lines = [f"🌾 {crop_name} from {origin}"]
+    if listing_number:
+        lines = [f"#{listing_number} 🌾 {crop_name} from {origin}"]
+    else:
+        lines = [f"🌾 {crop_name} from {origin}"]
 
     if show_seller and len(listing) > 13:
         seller = listing[13]
@@ -41,15 +44,18 @@ def format_listings(result: dict, show_seller: bool = False) -> str:
             )
 
     lines = [f"📄 Page {page}/{total_pages} — {total} listing(s)\n"]
-    lines += [f"{i+1}) {format_listing_item(l, show_seller=show_seller)}" for i, l in enumerate(listings)]
+    lines += [format_listing_item(l, show_seller=show_seller, listing_number=i+1) for i, l in enumerate(listings)]
 
     if page < total_pages:
         lines.append(f"\nReply *next* to see page {page + 1}")
+
+    if show_seller and listings:
+        lines.append(f"\n💡 To show interest, send: 'I'm interested in [quantity]kg of listing #[number]'")
 
     return "\n\n".join(lines)
 
 def get_listing_images(result: dict, show_seller: bool = False) -> list:
     return [
-        (l[8], format_listing_item(l, show_seller=show_seller))
-        for l in result["listings"] if l[8]
+        (l[8], format_listing_item(l, show_seller=show_seller, listing_number=i+1))
+        for i, l in enumerate(result["listings"]) if l[8]
     ]
