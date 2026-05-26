@@ -82,7 +82,7 @@ def get_listings(page=1, limit=10, crop_name=None, town=None, region=None, max_p
     else:
         # Only show verified farmers' listings in public search
         if not include_unverified:
-            filters.append("u.verified = true")
+            filters.append("u.verified = 'true'")
 
     where = f"WHERE {' AND '.join(filters)}" if filters else ""
     offset = (page - 1) * limit

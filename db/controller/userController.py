@@ -117,7 +117,7 @@ def change_role_to_farmer(user_id: str, region: str) -> dict:
         return {"status": "error", "message": "User not found"}
 
     verified = result[0]
-    if not verified:
+    if verified != 'true':
         return {
             "status": "ok",
             "message": "✅ Your account has been upgraded to Farmer!\n\n⚠️ Note: Your listings will NOT be visible to buyers until you verify your account. Send 'verify my account' to start the verification process.",
@@ -127,10 +127,14 @@ def change_role_to_farmer(user_id: str, region: str) -> dict:
     return {"status": "ok", "message": "✅ Your account has been upgraded to Farmer! You can now create listings."}
 
 def submit_verification_files(user_id: str, selfie_url: str, id_url: str) -> dict:
+    """
+    Submit verification files and set user status to 'pending'.
+    The files should already be uploaded to Cloudinary at moonso/users/{user_id}/.
+    """
     cur = conn.cursor()
     cur.execute("""
         UPDATE users
-        SET pic_folder = %s, updated_at = NOW()
+        SET pic_folder = %s, verified = 'pending', updated_at = NOW()
         WHERE id = %s
         RETURNING id
     """, (f"moonso/users/{user_id}", user_id))
@@ -143,7 +147,7 @@ def submit_verification_files(user_id: str, selfie_url: str, id_url: str) -> dic
 
     return {
         "status": "ok",
-        "message": "✅ Verification files submitted successfully!\n\nYour account will be reviewed by our team. You'll be notified once verified. After verification, buyers will be able to see your listings."
+        "message": "✅ Verification files submitted successfully!\n\nYour account status is now: ⏳ Pending Review\n\nOur team will review your documents. You'll be notified once verified. After verification, buyers will be able to see your listings."
     }
 
 def check_verification_status(user_id: str) -> dict:
@@ -160,13 +164,13 @@ def check_verification_status(user_id: str) -> dict:
     if role != "farmer":
         return {"status": "ok", "message": "Verification is only required for farmers. Switch to farmer role to create listings."}
 
-    if verified:
+    if verified == 'true':
         return {"status": "ok", "message": "✅ Your account is verified! You can create listings that are visible to all buyers."}
 
-    if pic_folder:
+    if verified == 'pending':
         return {"status": "ok", "message": "⏳ Your verification is pending review. We'll notify you once approved."}
 
     return {
         "status": "ok",
-        "message": "❌ Your account is not verified yet.\n\nTo verify:\n1. Send a clear selfie photo\n2. Send a photo of your ID card\n\nAccepted formats: JPEG, PNG, PDF (max 2MB each)\n\nWithout verification, buyers cannot see your listings."
+        "message": "❌ Your account is not verified yet.\n\nTo verify, send: 'verify my account'\n\nYou'll need to provide:\n1. A clear selfie photo\n2. A photo of your ID card\n\nAccepted formats: JPEG, PNG, PDF (max 2MB each)\n\nWithout verification, buyers cannot see your listings."
     }

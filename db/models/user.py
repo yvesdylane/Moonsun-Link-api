@@ -21,7 +21,7 @@ class User:
     pic_folder: Optional[str]
     created_at: datetime
     updated_at: datetime
-    verified: bool
+    verified: str  # 'true', 'false', 'pending'
     linking_code: Optional[str]
     code_expire_at: Optional[datetime]
 
@@ -64,7 +64,10 @@ class User:
         return self.role == 'admin'
 
     def is_verified(self) -> bool:
-        return self.verified
+        return self.verified == 'true'
+
+    def is_pending_verification(self) -> bool:
+        return self.verified == 'pending'
 
     def get_lang_display(self) -> str:
         """Get language display string, handling None"""
@@ -72,4 +75,9 @@ class User:
 
     def get_verification_status_display(self) -> str:
         """Get formatted verification status"""
-        return "✅ Verified" if self.verified else "❌ Not verified"
+        if self.verified == 'true':
+            return "✅ Verified"
+        elif self.verified == 'pending':
+            return "⏳ Pending verification"
+        else:
+            return "❌ Not verified"

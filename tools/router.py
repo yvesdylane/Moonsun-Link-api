@@ -272,19 +272,27 @@ class ToolRouter:
         if not image_url:
             return {
                 "status": "error",
-                "message": "Please send a photo of yourself (selfie). Accepted formats: JPEG, PNG, PDF (max 2MB)"
+                "message": "📸 Please send a photo of yourself (selfie).\n\nJust send the image directly - no need to caption it.\n\nAccepted formats: JPEG, PNG, PDF (max 2MB)"
             }
 
-        # Store selfie URL in state context
-        set_state(user_id, "awaiting_verification_id", {"selfie_url": image_url})
+        # Store selfie URL in state context (will overwrite if resent)
+        state = get_state(user_id)
+        context = state.get("context", {}) if state else {}
+        context["selfie_url"] = image_url
+
+        set_state(user_id, "awaiting_verification_id", context)
 
         return {
             "status": "ok",
-            "message": "✅ Selfie received!\n\nStep 2 of 2: Send a photo of your ID card\n\nAccepted formats: JPEG, PNG, PDF\nMax size: 2MB"
+            "message": "✅ Selfie received!\n\nStep 2 of 2: Send a photo of your ID card\n\nJust send the image directly.\n\nAccepted formats: JPEG, PNG, PDF\nMax size: 2MB"
         }
 
     def _handle_verification_id(self, user_id: str, image_url: str) -> dict:
         from db.controller.userController import submit_verification_files
+        from utils.verification_uploader import upload_verification_file
+        from utils.audio_downloader import download_attachment
+        import tempfile
+        import requests
 
         state = get_state(user_id)
         if not state or "selfie_url" not in state["context"]:
@@ -294,15 +302,57 @@ class ToolRouter:
         if not image_url:
             return {
                 "status": "error",
-                "message": "Please send a photo of your ID card. Accepted formats: JPEG, PNG, PDF (max 2MB)"
+                "message": "🆔 Please send a photo of your ID card.\n\nJust send the image directly.\n\nAccepted formats: JPEG, PNG, PDF (max 2MB)"
             }
 
         selfie_url = state["context"]["selfie_url"]
-        clear_state(user_id)
 
-        # Submit both files for verification
-        result = submit_verification_files(user_id, selfie_url, image_url)
-        return result
+        # Download and upload selfie to correct location
+        try:
+            # Download selfie from Cloudinary (currently in wrong location)
+            selfie_response = requests.get(selfie_url)
+            suffix_selfie = "." + selfie_url.rsplit(".", 1)[-1].split("?")[0]
+            tmp_selfie = tempfile.NamedTemporaryFile(suffix=suffix_selfie, delete=False)
+            tmp_selfie.write(selfie_response.content)
+            tmp_selfie.close()
+
+            # Upload to correct location
+            selfie_upload = upload_verification_file(tmp_selfie.name, user_id, "selfie")
+            import os
+            os.unlink(tmp_selfie.name)
+
+            if selfie_upload["status"] == "error":
+                clear_state(user_id)
+                return selfie_upload
+
+            # Download and upload ID
+            id_response = requests.get(image_url)
+            suffix_id = "." + image_url.rsplit(".", 1)[-1].split("?")[0]
+            tmp_id = tempfile.NamedTemporaryFile(suffix=suffix_id, delete=False)
+            tmp_id.write(id_response.content)
+            tmp_id.close()
+
+            # Upload ID to correct location
+            id_upload = upload_verification_file(tmp_id.name, user_id, "id")
+            os.unlink(tmp_id.name)
+
+            if id_upload["status"] == "error":
+                clear_state(user_id)
+                return id_upload
+
+            clear_state(user_id)
+
+            # Submit both files for verification (sets status to pending)
+            result = submit_verification_files(user_id, selfie_upload["url"], id_upload["url"])
+            return result
+
+        except Exception as e:
+            clear_state(user_id)
+            print(f"VERIFICATION FILE PROCESSING ERROR: {e}")
+            return {
+                "status": "error",
+                "message": "Failed to process verification files. Please try again."
+            }
 
     def _listing_preview(self, listing_id: int, user_id: str) -> dict:
         result = get_listings(page=1, limit=1, user_id=user_id)
