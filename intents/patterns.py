@@ -166,4 +166,38 @@ INTENT_PATTERNS = {
             "change my region"
         ]
     },
+
+    "show_available_products": {
+        "keywords": [
+            "available products",
+            "what products",
+            "list products",
+            "show products",
+            "what's available"
+        ],
+        "examples": [
+            "what products are available",
+            "show me all available products",
+            "what can I buy",
+            "list all products being sold",
+            "what products are currently listed"
+        ]
+    },
+
+    "product_locations": {
+        "keywords": [
+            "where is",
+            "where can I find",
+            "where are they selling",
+            "location of",
+            "where to buy"
+        ],
+        "examples": [
+            "where is corn being sold",
+            "where can I find tomatoes",
+            "where are they selling maize",
+            "what regions have cassava",
+            "where to buy onions"
+        ]
+    },
 }

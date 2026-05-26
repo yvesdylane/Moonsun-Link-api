@@ -121,3 +121,172 @@ def get_listings(page=1, limit=10, crop_name=None, town=None, region=None, max_p
         "total_pages": total_pages,
         "total": total
     }
+
+def get_available_products() -> list:
+    """
+    Get list of distinct products currently being sold by verified farmers.
+
+    Returns:
+        List of product names
+    """
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT DISTINCT c.name
+        FROM listings l
+        JOIN crops c ON l.crop_id = c.id
+        JOIN users u ON l.user_id = u.id
+        WHERE u.verified = 'true'
+        ORDER BY c.name
+    """)
+    products = [row[0] for row in cur.fetchall()]
+    cur.close()
+    return products
+
+def get_product_locations(crop_name: str) -> dict:
+    """
+    Get regions and towns where a specific product is being sold by verified farmers.
+
+    Args:
+        crop_name: Name of the crop/product
+
+    Returns:
+        dict with status, product name, and location data
+    """
+    crop_id = get_crop_id(crop_name)
+    if not crop_id:
+        return {"status": "error", "message": f"Product '{crop_name}' not recognized"}
+
+    cur = conn.cursor()
+
+    # Check if product exists in verified listings
+    cur.execute("""
+        SELECT COUNT(*)
+        FROM listings l
+        JOIN users u ON l.user_id = u.id
+        WHERE l.crop_id = %s AND u.verified = 'true'
+    """, (crop_id,))
+
+    count = cur.fetchone()[0]
+
+    if count == 0:
+        cur.close()
+        return {
+            "status": "not_found",
+            "product": crop_name,
+            "message": f"No one is currently selling {crop_name}"
+        }
+
+    # Get regions and towns
+    cur.execute("""
+        SELECT DISTINCT l.region, l.town
+        FROM listings l
+        JOIN users u ON l.user_id = u.id
+        WHERE l.crop_id = %s AND u.verified = 'true'
+        ORDER BY l.region, l.town
+    """, (crop_id,))
+
+    locations = cur.fetchall()
+    cur.close()
+
+    # Organize by region
+    regions_data = {}
+    for region, town in locations:
+        if region not in regions_data:
+            regions_data[region] = []
+        if town and town not in regions_data[region]:
+            regions_data[region].append(town)
+
+    return {
+        "status": "ok",
+        "product": crop_name,
+        "count": count,
+        "regions": regions_data
+    }
+
+def check_product_exists(crop_name: str, region: str = None, max_price: int = None) -> dict:
+    """
+    Check if a product exists in verified listings and where it fails criteria.
+
+    Args:
+        crop_name: Name of the crop/product
+        region: Optional region filter
+        max_price: Optional maximum price filter
+
+    Returns:
+        dict with existence status and alternative suggestions
+    """
+    crop_id = get_crop_id(crop_name)
+    if not crop_id:
+        return {"exists": False, "reason": "unknown_product"}
+
+    cur = conn.cursor()
+
+    # Check if product exists at all in verified listings
+    cur.execute("""
+        SELECT COUNT(*)
+        FROM listings l
+        JOIN users u ON l.user_id = u.id
+        WHERE l.crop_id = %s AND u.verified = 'true'
+    """, (crop_id,))
+
+    total_count = cur.fetchone()[0]
+
+    if total_count == 0:
+        cur.close()
+        return {"exists": False, "reason": "not_listed"}
+
+    # Check with filters
+    filters = ["l.crop_id = %s", "u.verified = 'true'"]
+    values = [crop_id]
+
+    if region:
+        filters.append("l.region = %s")
+        values.append(region)
+
+    if max_price:
+        filters.append("l.price <= %s")
+        values.append(max_price)
+
+    where = " AND ".join(filters)
+
+    cur.execute(f"""
+        SELECT COUNT(*)
+        FROM listings l
+        JOIN users u ON l.user_id = u.id
+        WHERE {where}
+    """, values)
+
+    filtered_count = cur.fetchone()[0]
+
+    if filtered_count > 0:
+        cur.close()
+        return {"exists": True, "count": filtered_count}
+
+    # Product exists but doesn't match criteria - provide feedback
+    feedback = {"exists": True, "matches_criteria": False, "total_listings": total_count}
+
+    # Check what's failing
+    if region:
+        cur.execute("""
+            SELECT DISTINCT l.region
+            FROM listings l
+            JOIN users u ON l.user_id = u.id
+            WHERE l.crop_id = %s AND u.verified = 'true'
+        """, (crop_id,))
+        available_regions = [row[0] for row in cur.fetchall()]
+        feedback["available_regions"] = available_regions
+        feedback["searched_region"] = region
+
+    if max_price:
+        cur.execute("""
+            SELECT MIN(l.price)
+            FROM listings l
+            JOIN users u ON l.user_id = u.id
+            WHERE l.crop_id = %s AND u.verified = 'true'
+        """, (crop_id,))
+        min_price = cur.fetchone()[0]
+        feedback["min_price"] = min_price
+        feedback["max_price_searched"] = max_price
+
+    cur.close()
+    return feedback

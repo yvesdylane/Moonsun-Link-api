@@ -23,7 +23,7 @@ class GroqIntentClassifier:
 Available intents:
 1. greeting - User says hello or greets the bot
 2. create_listing - User wants to sell/post a product
-3. search_listings - User wants to find/browse products
+3. search_listings - User wants to find/browse products with specific criteria
 4. get_my_listings - User wants to see their own listings
 5. update_listing - User wants to update/edit/change an existing listing
 6. delete_listing - User wants to remove/delete a listing
@@ -31,7 +31,9 @@ Available intents:
 8. verify_account - User wants to verify their farmer account
 9. change_role - User wants to become a farmer (upgrade from buyer)
 10. update_profile - User wants to update their name or region
-11. unknown - None of the above match
+11. show_available_products - User asks what products are available/listed
+12. product_locations - User asks where a specific product is being sold
+13. unknown - None of the above match
 
 Extract entities:
 - product: crop name (maize, cassava, tomato, onion, plantain, yam, etc.)
@@ -61,7 +63,10 @@ Rules:
 - Set missing entities to null
 - For "change_role" intent, extract the region from phrases like "in Littoral" or "farmer in Centre"
 - For "update_listing", look for keywords: update, change, edit, modify + listing/product
-- For "change_role", look for: become farmer, switch to farmer, upgrade to farmer, change role"""
+- For "change_role", look for: become farmer, switch to farmer, upgrade to farmer, change role
+- For "show_available_products", look for: what products, available products, list products, what's available
+- For "product_locations", look for: where is X, where can I find X, where to buy X
+- For "search_listings", user specifies criteria (location, price, etc.) - differs from product_locations which asks general availability"""
 
         try:
             response = self.client.chat.completions.create(

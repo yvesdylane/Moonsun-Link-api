@@ -58,6 +58,8 @@ class ToolRouter:
             "verify_account": self._verify_account,
             "change_role": self._change_role,
             "update_profile": self._update_profile,
+            "show_available_products": self._show_available_products,
+            "product_locations": self._product_locations,
         }
 
         handler = routes.get(intent, self._unknown)
@@ -138,11 +140,52 @@ class ToolRouter:
         return self._listing_preview(result["listing_id"], user_id)
 
     def _search_listings(self, entities, user_id, image_url=None):
+        from db.controller.listingController import check_product_exists
+
         filters = {
             "crop_name": entities.get("product"),
             "town": entities.get("location"),
+            "region": entities.get("region"),
+            "max_price": entities.get("price"),
         }
+
         result = get_listings(page=1, **filters)
+
+        # If no results and product was specified, provide helpful feedback
+        if result["total"] == 0 and entities.get("product"):
+            check_result = check_product_exists(
+                crop_name=entities.get("product"),
+                region=entities.get("region"),
+                max_price=entities.get("price")
+            )
+
+            if not check_result["exists"]:
+                if check_result["reason"] == "not_listed":
+                    return {
+                        "status": "ok",
+                        "message": f"❌ No one is currently selling {entities.get('product')}.\n\nTo see available products, send: 'What products are available?'"
+                    }
+
+            elif not check_result.get("matches_criteria", True):
+                # Product exists but doesn't match criteria
+                feedback_parts = [f"⚠️ {entities.get('product').capitalize()} is listed but doesn't match your criteria:"]
+
+                if "available_regions" in check_result:
+                    regions_str = ", ".join(check_result["available_regions"])
+                    feedback_parts.append(f"\n📍 You searched in: {check_result['searched_region']}")
+                    feedback_parts.append(f"✅ Available in: {regions_str}")
+
+                if "min_price" in check_result:
+                    feedback_parts.append(f"\n💰 Your max price: {check_result['max_price_searched']} XAF")
+                    feedback_parts.append(f"✅ Lowest price: {check_result['min_price']} XAF")
+
+                feedback_parts.append(f"\n\nTo see all {entities.get('product')} listings, send: 'Find {entities.get('product')}'")
+
+                return {
+                    "status": "ok",
+                    "message": "".join(feedback_parts)
+                }
+
         if result["total_pages"] > 1:
             set_state(user_id, "browsing_listings", {
                 "filters": filters,
@@ -450,6 +493,62 @@ class ToolRouter:
             }
 
         return update_user_info(user_id, updates)
+
+    def _show_available_products(self, entities, user_id, image_url=None):
+        from db.controller.listingController import get_available_products
+
+        products = get_available_products()
+
+        if not products:
+            return {
+                "status": "ok",
+                "message": "No products are currently available. Be the first to list a product!"
+            }
+
+        product_list = "\n".join([f"• {product.capitalize()}" for product in products])
+
+        return {
+            "status": "ok",
+            "message": f"🌾 *Currently Available Products*\n\n{product_list}\n\nTo search for a specific product, send:\n'Find [product name]' or 'Find [product] in [location]'"
+        }
+
+    def _product_locations(self, entities, user_id, image_url=None):
+        from db.controller.listingController import get_product_locations
+
+        product = entities.get("product")
+        if not product:
+            return {
+                "status": "error",
+                "message": "Which product are you looking for?\n\nExample: 'Where is corn being sold?'"
+            }
+
+        result = get_product_locations(product)
+
+        if result["status"] == "not_found":
+            return {
+                "status": "ok",
+                "message": f"❌ No one is currently selling {product}.\n\nTo see what's available, send: 'What products are available?'"
+            }
+
+        if result["status"] == "error":
+            return result
+
+        # Format locations by region
+        regions_text = []
+        for region, towns in result["regions"].items():
+            if towns:
+                towns_str = ", ".join(towns)
+                regions_text.append(f"📍 *{region}*: {towns_str}")
+            else:
+                regions_text.append(f"📍 *{region}*")
+
+        locations_formatted = "\n".join(regions_text)
+        count_text = f"{result['count']} listing{'s' if result['count'] > 1 else ''}"
+
+        return {
+            "status": "ok",
+            "message": f"🌾 *{product.capitalize()}* ({count_text})\n\nCurrently being sold in:\n\n{locations_formatted}\n\nTo see listings, send: 'Find {product}'"
+        }
 
     def _unknown(self, entities, user_id, image_url=None):
         return {"status": "error", "message": "I didn't understand that. Try asking to sell, find, or delete a listing."}
