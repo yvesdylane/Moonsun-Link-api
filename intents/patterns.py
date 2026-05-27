@@ -35,7 +35,7 @@ INTENT_PATTERNS = {
     },
 
     "search_listings": {
-        "keywords": ["find", "who sells", "anyone selling", "browse", "search"],
+        "keywords": ["find", "who sells", "anyone selling", "browse", "search", "show all listings", "market listings", "show listings"],
         "examples": [
             "can i see the different listings for corn in yaounde",
             "who is selling maize in bafoussam",
@@ -43,11 +43,12 @@ INTENT_PATTERNS = {
             "show me cassava listings in yaounde",
             "i want to browse onion products",
             "show me all listings",
-            "show me all products",
+            "show all listings on the market",
             "show all available listings",
-            "can i see all available products",
-            "show me all available products",
-            "what products are available",
+            "market listings",
+            "product propositions on the market",
+            "show listings",
+            "browse all listings",
         ]
     },
 
@@ -171,16 +172,19 @@ INTENT_PATTERNS = {
         "keywords": [
             "available products",
             "what products",
+            "what crops",
             "list products",
-            "show products",
+            "which products",
             "what's available"
         ],
         "examples": [
             "what products are available",
-            "show me all available products",
+            "what crops are available",
             "what can I buy",
-            "list all products being sold",
-            "what products are currently listed"
+            "which products are being sold",
+            "what products are currently listed",
+            "list of available crops",
+            "what crops can I find"
         ]
     },
 

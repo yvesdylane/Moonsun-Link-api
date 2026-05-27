@@ -46,7 +46,7 @@ def save_interest(listing_id: int, user_id: str, quantity: int, message: str = N
                 message = EXCLUDED.message,
                 created_at = NOW()
             RETURNING id
-        """, (listing_id, user_id, quantity, message))
+        """, (listing_id, user_id, quantity if quantity else None, message))
 
         interest_id = cur.fetchone()[0]
         conn.commit()

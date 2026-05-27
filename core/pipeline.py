@@ -29,6 +29,7 @@ class AssistantPipeline:
             "region": groq_entities.get("region") or regex_entities.get("region"),
             "origin": groq_entities.get("origin") or regex_entities.get("origin"),
             "name": groq_entities.get("name"),
+            "listing_number": groq_entities.get("listing_number"),
         }
 
         intent = {

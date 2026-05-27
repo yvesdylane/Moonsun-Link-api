@@ -81,7 +81,11 @@ class ToolRouter:
                     result["language"] = state["context"].get("language", "en")
                     return result
                 if new_pipeline:
-                    clear_state(user_id)
+                    # Don't clear state for intents that need listing context
+                    intent = new_pipeline["intent"]["intent"]
+                    if intent not in ("update_listing", "delete_listing", "show_interest", "view_listing_image"):
+                        clear_state(user_id)
+                    # If it's a context-aware intent, fall through to handler
                 else:
                     return {
                         "status": "error",
@@ -141,11 +145,12 @@ class ToolRouter:
         }
 
         handler = routes.get(intent, self._unknown)
-        result = handler(entities, user_id, image_url)
+        # Pass original text for context-aware operations
+        result = handler(entities, user_id, image_url, text)
         result["language"] = language
         return result
 
-    def _greeting(self, entities, user_id, image_url=None):
+    def _greeting(self, entities, user_id, image_url=None, text=""):
         from db.controller.userController import get_user_info
 
         user = get_user_info(user_id)
@@ -179,7 +184,7 @@ class ToolRouter:
             )
         }
 
-    def _create_listing(self, entities, user_id, image_url=None):
+    def _create_listing(self, entities, user_id, image_url=None, text=""):
         from db.controller.userController import get_user_info
 
         user = get_user_info(user_id)
@@ -217,7 +222,7 @@ class ToolRouter:
 
         return self._listing_preview(result["listing_id"], user_id)
 
-    def _search_listings(self, entities, user_id, image_url=None):
+    def _search_listings(self, entities, user_id, image_url=None, text=""):
         from db.controller.listingController import check_product_exists
 
         filters = {
@@ -229,11 +234,25 @@ class ToolRouter:
 
         result = get_listings(page=1, **filters)
 
-        # Store listing IDs in state for interest tracking
+        # Store listing IDs and details in state for interest tracking
         if result["total"] > 0:
-            listing_ids = [listing[0] for listing in result["listings"]]
-            set_state(user_id, "viewing_listings", {
+            from datetime import datetime
+            listing_ids = [str(listing[0]) for listing in result["listings"]]
+            # Convert UUIDs and datetimes to strings for JSON serialization
+            listings_details = []
+            for listing in result["listings"]:
+                serializable_listing = []
+                for x in listing:
+                    if hasattr(x, 'hex'):  # UUID
+                        serializable_listing.append(str(x))
+                    elif isinstance(x, datetime):
+                        serializable_listing.append(x.isoformat())
+                    else:
+                        serializable_listing.append(x)
+                listings_details.append(serializable_listing)
+            set_state(user_id, "browsing_listings", {
                 "listing_ids": listing_ids,
+                "listings_details": listings_details,
                 "filters": filters,
                 "page": 1,
                 "show_seller": True
@@ -274,23 +293,35 @@ class ToolRouter:
                     "message": "".join(feedback_parts)
                 }
 
-        if result["total_pages"] > 1:
-            set_state(user_id, "browsing_listings", {
-                "filters": filters,
-                "page": 1,
-                "show_seller": True
-            })
+        # Already set state above if listings exist
         return {"status": "ok", "data": result, "show_seller": True}
 
-    def _get_my_listings(self, entities, user_id, image_url=None):
+    def _get_my_listings(self, entities, user_id, image_url=None, text=""):
+        from datetime import datetime
         filters = {"crop_name": entities.get("product"), "user_id": user_id, "include_unverified": True}
         result = get_listings(page=1, **filters)
-        if result["total_pages"] > 1:
-            set_state(user_id, "browsing_listings", {
-                "filters": filters,
-                "page": 1,
-                "show_seller": False
-            })
+        listing_ids = [str(listing[0]) for listing in result["listings"]] if result["total"] > 0 else []
+        # Store full listing details for context-aware operations (convert UUIDs and datetimes to strings)
+        listings_details = []
+        if result["total"] > 0:
+            for listing in result["listings"]:
+                # Convert UUID and datetime objects to strings
+                serializable_listing = []
+                for x in listing:
+                    if hasattr(x, 'hex'):  # UUID
+                        serializable_listing.append(str(x))
+                    elif isinstance(x, datetime):
+                        serializable_listing.append(x.isoformat())
+                    else:
+                        serializable_listing.append(x)
+                listings_details.append(serializable_listing)
+        set_state(user_id, "browsing_listings", {
+            "listing_ids": listing_ids,
+            "listings_details": listings_details,
+            "filters": filters,
+            "page": 1,
+            "show_seller": False
+        })
         return {"status": "ok", "data": result, "show_seller": False}
 
     def _browse_page(self, user_id: str, context: dict, direction: int) -> dict:
@@ -304,7 +335,7 @@ class ToolRouter:
             set_state(user_id, "browsing_listings", context)
         return {"status": "ok", "data": result}
 
-    def _delete_listing(self, entities, user_id, image_url=None):
+    def _delete_listing(self, entities, user_id, image_url=None, text=""):
         if not entities.get("product"):
             return {"status": "error", "message": "Which crop listing do you want to delete?"}
 
@@ -338,7 +369,45 @@ class ToolRouter:
         except ValueError:
             return {"status": "error", "message": f"Please reply with a number between 1 and {len(listings)}"}
 
-    def _update_listing(self, entities, user_id, image_url=None):
+    def _update_listing(self, entities, user_id, image_url=None, text=""):
+        state = get_state(user_id)
+
+        print(f"=== UPDATE_LISTING DEBUG ===")
+        print(f"State exists: {state is not None}")
+        if state:
+            print(f"State: {state.get('state')}")
+            print(f"Context keys: {state.get('context', {}).keys()}")
+            print(f"Has listings_details: {'listings_details' in state.get('context', {})}")
+
+        # Check if user has listings context from recent viewing
+        if state and "listings_details" in state.get("context", {}):
+            listings_details = state["context"]["listings_details"]
+            print(f"Using context-aware resolution with {len(listings_details)} listings")
+
+            # Use context-aware resolution with Groq
+            from intents.groq_classifier import GroqIntentClassifier
+            classifier = GroqIntentClassifier()
+
+            resolution = classifier.resolve_with_context(text, listings_details)
+
+            if resolution["status"] == "ok":
+                listing_id = resolution["listing_id"]
+                updates = resolution["updates"]
+
+                if image_url:
+                    updates["image_url"] = image_url
+
+                if not updates:
+                    return {"status": "error", "message": "What do you want to update? You can change the price, quantity, town, region, origin or image."}
+
+                clear_state(user_id)
+                update_result = update_listing(listing_id=listing_id, user_id=user_id, updates=updates)
+                if update_result["status"] == "error":
+                    return update_result
+                return self._listing_preview(listing_id, user_id)
+            # If resolution failed, fall through to old method
+
+        # Fallback: old method without context
         if not entities.get("product"):
             return {"status": "error", "message": "Which crop listing do you want to update?"}
 
@@ -497,7 +566,7 @@ class ToolRouter:
             }
         return {"status": "ok", "message": "✅ Listing updated successfully"}
 
-    def _get_my_info(self, entities, user_id, image_url=None):
+    def _get_my_info(self, entities, user_id, image_url=None, text=""):
         from db.controller.userController import get_user_info
 
         user = get_user_info(user_id)
@@ -519,7 +588,7 @@ class ToolRouter:
 
         return {"status": "ok", "message": info}
 
-    def _verify_account(self, entities, user_id, image_url=None):
+    def _verify_account(self, entities, user_id, image_url=None, text=""):
         from db.controller.userController import get_user_info, check_verification_status
 
         user = get_user_info(user_id)
@@ -545,7 +614,7 @@ class ToolRouter:
             "message": "📸 *Verification Process*\n\nStep 1 of 2: Send a clear photo of yourself (selfie)\n\nAccepted formats: JPEG, PNG, PDF\nMax size: 2MB"
         }
 
-    def _change_role(self, entities, user_id, image_url=None):
+    def _change_role(self, entities, user_id, image_url=None, text=""):
         from db.controller.userController import change_role_to_farmer, get_user_info
 
         user = get_user_info(user_id)
@@ -564,7 +633,7 @@ class ToolRouter:
 
         return change_role_to_farmer(user_id, region)
 
-    def _update_profile(self, entities, user_id, image_url=None):
+    def _update_profile(self, entities, user_id, image_url=None, text=""):
         from db.controller.userController import update_user_info
 
         updates = {}
@@ -582,7 +651,7 @@ class ToolRouter:
 
         return update_user_info(user_id, updates)
 
-    def _show_available_products(self, entities, user_id, image_url=None):
+    def _show_available_products(self, entities, user_id, image_url=None, text=""):
         from db.controller.listingController import get_available_products
 
         products = get_available_products()
@@ -600,7 +669,7 @@ class ToolRouter:
             "message": f"🌾 *Currently Available Products*\n\n{product_list}\n\nTo search for a specific product, send:\n'Find [product name]' or 'Find [product] in [location]'"
         }
 
-    def _product_locations(self, entities, user_id, image_url=None):
+    def _product_locations(self, entities, user_id, image_url=None, text=""):
         from db.controller.listingController import get_product_locations
 
         product = entities.get("product")
@@ -638,7 +707,7 @@ class ToolRouter:
             "message": f"🌾 *{product.capitalize()}* ({count_text})\n\nCurrently being sold in:\n\n{locations_formatted}\n\nTo see listings, send: 'Find {product}'"
         }
 
-    def _show_interest(self, entities, user_id, image_url=None):
+    def _show_interest(self, entities, user_id, image_url=None, text=""):
         from db.controller.listingInterestController import save_interest
         from db.controller.userController import get_user_info
         from utils.whatsapp import send_whatsapp_reply
@@ -722,7 +791,7 @@ class ToolRouter:
             }
         }
 
-    def _view_listing_interests(self, entities, user_id, image_url=None):
+    def _view_listing_interests(self, entities, user_id, image_url=None, text=""):
         from db.controller.listingInterestController import get_listing_interests
         from db.controller.userController import get_user_info
 
@@ -760,7 +829,7 @@ class ToolRouter:
             "message": "\n".join(lines)
         }
 
-    def _search_by_price(self, entities, user_id, image_url=None):
+    def _search_by_price(self, entities, user_id, image_url=None, text=""):
         from db.controller.listingController import search_by_price
 
         product = entities.get("product")
@@ -825,7 +894,7 @@ class ToolRouter:
                 )
             }
 
-    def _view_listing_image(self, entities, user_id, image_url=None):
+    def _view_listing_image(self, entities, user_id, image_url=None, text=""):
         from db.connect import conn
 
         state = get_state(user_id)
@@ -886,6 +955,6 @@ class ToolRouter:
             "preview_image": image
         }
 
-    def _unknown(self, entities, user_id, image_url=None):
+    def _unknown(self, entities, user_id, image_url=None, text=""):
         return {"status": "error", "message": "I didn't understand that. Try asking to sell, find, or delete a listing."}
 
