@@ -12,8 +12,15 @@ def send_whatsapp_reply(chat_id: str, message: str):
     url = f"{UNIPILE_URL}/api/v1/chats/{chat_id}/messages"
     headers = {"X-API-KEY": UNIPILE_TOKEN}
     data = {"text": message}
-    response = requests.post(url, headers=headers, data=data)
-    return response.json()
+    try:
+        response = requests.post(url, headers=headers, data=data, timeout=10)
+        print(f"WhatsApp send response: {response.status_code}")
+        if response.status_code != 200:
+            print(f"WhatsApp send error: {response.text}")
+        return response.json()
+    except Exception as e:
+        print(f"WHATSAPP SEND ERROR: {e}")
+        return {"status": "error", "error": str(e)}
 
 
 def send_whatsapp_image(chat_id: str, image_url: str, caption: str = ""):

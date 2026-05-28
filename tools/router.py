@@ -83,9 +83,12 @@ class ToolRouter:
                 if new_pipeline:
                     # Don't clear state for intents that need listing context
                     intent = new_pipeline["intent"]["intent"]
-                    if intent not in ("update_listing", "delete_listing", "show_interest", "view_listing_image"):
+                    if intent in ("update_listing", "delete_listing", "show_interest", "view_listing_image"):
+                        # Context-aware intents - fall through to handler with state
+                        pass
+                    else:
+                        # Other intents clear the browsing state
                         clear_state(user_id)
-                    # If it's a context-aware intent, fall through to handler
                 else:
                     return {
                         "status": "error",

@@ -1,24 +1,30 @@
-from faster_whisper import WhisperModel
+import os
+from groq import Groq
+from dotenv import load_dotenv
 
-model = WhisperModel("base", device="cpu", compute_type="int8")
+load_dotenv()
+
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 def transcribe_audio(file_path: str) -> str:
-    segments, info = model.transcribe(
-        file_path,
-        language=None,
-        condition_on_previous_text=False,
-        vad_filter=True,          # filters out silence
-    )
-    detected = info.language
-    print(f"WHISPER DETECTED LANGUAGE: {detected}")
+    """
+    Transcribe audio using Groq's Whisper API.
+    Supports multiple languages, defaults to auto-detect.
+    """
+    try:
+        with open(file_path, "rb") as audio_file:
+            transcription = client.audio.transcriptions.create(
+                file=audio_file,
+                model="whisper-large-v3-turbo",
+                response_format="verbose_json",  # includes language detection
+                temperature=0.0
+            )
 
-    # if whisper detected something other than en/fr, force english
-    if detected not in ("en", "fr"):
-        segments, info = model.transcribe(
-            file_path,
-            language="en",
-            condition_on_previous_text=False,
-            vad_filter=True,
-        )
+        detected_lang = transcription.language if hasattr(transcription, 'language') else 'unknown'
+        print(f"GROQ WHISPER DETECTED LANGUAGE: {detected_lang}")
 
-    return " ".join([segment.text for segment in segments]).strip()
+        return transcription.text.strip()
+
+    except Exception as e:
+        print(f"GROQ WHISPER ERROR: {e}")
+        raise

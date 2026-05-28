@@ -1,0 +1,35 @@
+# Moonso Link - Agricultural Marketplace Platform
+# Python 3.12+
+
+# Web Framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+
+# Telegram Bot
+python-telegram-bot==20.7
+
+# Database
+psycopg[binary]==3.2.3
+
+# AI/ML - Groq for LLM + Whisper
+groq==0.13.0
+
+# Translation & Language Detection
+deep-translator==1.11.4
+langdetect==1.0.9
+
+# Fuzzy Matching (fallback)
+rapidfuzz==3.10.1
+
+# Image Processing
+Pillow==11.0.0
+
+# File Storage
+cloudinary==1.41.0
+
+# HTTP Requests
+requests==2.32.3
+
+# Environment Variables
+python-dotenv==1.0.1
