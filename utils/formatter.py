@@ -2,7 +2,7 @@ def format_listing_item(listing: tuple, show_seller: bool = False, listing_numbe
     crop_name = listing[12].capitalize()
     quantity = listing[3]
     price = listing[4]
-    town = listing[5] or "Not specified"
+    town = listing[5]
     region = listing[6]
     origin = listing[7]
     image_url = listing[8]
@@ -27,7 +27,19 @@ def format_listing_item(listing: tuple, show_seller: bool = False, listing_numbe
             price_line += f" {indicator}"
     lines.append(price_line)
 
-    lines.append(f"📍 {town}, {region}")
+    # Format location based on town/region
+    if town:
+        if region == "General":
+            location = f"📍 {town} (Available nationwide)"
+        else:
+            location = f"📍 {town}, {region}"
+    else:
+        if region == "General":
+            location = f"📍 Available nationwide (General)"
+        else:
+            location = f"📍 Not specified, {region}"
+    lines.append(location)
+
     lines.append(f"⏳ Expires: {expires_at}")
 
     return "\n".join(lines)

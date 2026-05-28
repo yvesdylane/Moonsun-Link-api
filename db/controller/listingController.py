@@ -3,22 +3,49 @@ from db.controller.cropController import get_crop_id
 from db.controller.userController import get_user_role
 
 
-def create_listing(user_id, crop_name, quantity, price, town, region, image_url=None):
+def create_listing(user_id, crop_name, quantity, price, town=None, region=None, origin=None, image_url=None):
+    """
+    Create a new listing.
+
+    If region not specified, uses user's profile region.
+    If origin not specified, uses same as region.
+
+    Returns dict with listing_id and missing_location flag.
+    """
     crop_id = get_crop_id(crop_name)
     if not crop_id:
         return {"status": "error", "message": f"Crop '{crop_name}' not found"}
 
+    # Get user's region if not specified
+    if not region:
+        from db.controller.userController import get_user_info
+        user = get_user_info(user_id)
+        region = user.region if user else "General"
+
+    # Use region as origin if origin not specified
+    if not origin:
+        origin = region
+
     cur = conn.cursor()
     query = """
-        INSERT INTO listings (user_id, crop_id, quantity_kg, price, town, region, image_url)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO listings (user_id, crop_id, quantity_kg, price, town, region, origin, image_url)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
     """
-    cur.execute(query, (user_id, crop_id, quantity, price, town, region, image_url))
+    cur.execute(query, (user_id, crop_id, quantity, price, town, region, origin, image_url))
     listing_id = cur.fetchone()[0]
     conn.commit()
     cur.close()
-    return {"status": "ok", "listing_id": listing_id}
+
+    return {
+        "status": "ok",
+        "listing_id": listing_id,
+        "missing_location": town is None,
+        "region": region,
+        "crop_name": crop_name,
+        "quantity": quantity,
+        "price": price
+    }
 
 
 def delete_listing(listing_id: int, user_id: str):
@@ -75,7 +102,8 @@ def get_listings(page=1, limit=10, crop_name=None, town=None, region=None, max_p
         filters.append("l.town ILIKE %s")
         values.append(f"%{town}%")
     if region:
-        filters.append("l.region = %s")
+        # Include both specific region AND General listings
+        filters.append("(l.region = %s OR l.region = 'General')")
         values.append(region)
     if max_price:
         filters.append("l.price <= %s")

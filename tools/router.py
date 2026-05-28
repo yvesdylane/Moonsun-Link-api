@@ -132,6 +132,18 @@ class ToolRouter:
                         "message": "🆔 Please send a photo of your ID card.\n\nJust send the image directly.\n\nAccepted formats: JPEG, PNG, PDF (max 2MB)"
                     }
 
+            # ── awaiting_location ──────────────────────────────────────
+            if state["state"] == "awaiting_location":
+                # Check if user wants to do something else
+                if new_pipeline:
+                    clear_state(user_id)
+                    # Fall through to normal handler
+                else:
+                    # Treat as town name
+                    result = self._handle_location_input(text, user_id, state["context"])
+                    result["language"] = "en"
+                    return result
+
         pipeline_result = self.pipeline.process(text)
         intent = pipeline_result["intent"]["intent"]
         entities = pipeline_result["entities"]
@@ -224,20 +236,55 @@ class ToolRouter:
         if not entities.get("price"):
             return {"status": "error", "message": "What is your price per kg in XAF?"}
 
+        # Compress image if provided
+        compressed_image_url = image_url
+        if image_url:
+            from utils.image_compressor import compress_image
+            from utils.cloudinary_uploader import upload_to_cloudinary
+            try:
+                compressed_path = compress_image(image_url)
+                compressed_image_url = upload_to_cloudinary(compressed_path, folder="moonso/listings")
+            except Exception as e:
+                print(f"Image compression/upload failed: {e}")
+                compressed_image_url = image_url
+
         result = create_listing(
             user_id=user_id,
             crop_name=entities.get("product"),
             quantity=entities.get("quantity"),
             price=entities.get("price"),
             town=entities.get("location"),
-            region="General",
-            image_url=image_url
+            region=entities.get("region"),  # Will use user's region if None
+            origin=entities.get("region"),
+            image_url=compressed_image_url
         )
 
         if result["status"] == "error":
             return result
 
-        return self._listing_preview(result["listing_id"], user_id)
+        # Build success message
+        message = f"✅ Listing created! Your {result['quantity']}kg of {result['crop_name'].capitalize()} at {result['price']} XAF/kg"
+
+        # If location missing, prompt for it
+        if result.get("missing_location"):
+            message += (
+                f"\n\n⚠️ Location not specified - Buyers prefer to know where products are sold.\n\n"
+                f"Send the town name (e.g., 'Yaoundé', 'Douala') to add location, or send another command to skip."
+            )
+
+            # Enter awaiting_location state
+            set_state(user_id, "awaiting_location", {
+                "listing_id": result["listing_id"],
+                "crop_name": result["crop_name"],
+                "quantity": result["quantity"],
+                "price": result["price"],
+                "region": result["region"]
+            })
+
+        return {
+            "status": "ok",
+            "message": message
+        }
 
     def _search_listings(self, entities, user_id, image_url=None, text=""):
         from db.controller.listingController import check_product_exists
@@ -681,7 +728,15 @@ class ToolRouter:
         if not region:
             return {
                 "status": "error",
-                "message": "Please specify your primary region of activity.\n\nExample: 'change my role to farmer in Littoral'\n\nAvailable regions: Littoral, Centre, Ouest, Nord, Sud, etc."
+                "message": (
+                    "📍 *Region Selection*\n\n"
+                    "Your region refers to your main area of activity.\n\n"
+                    "If you operate across all of Cameroon, you can leave it as \"General\".\n\n"
+                    "Which region?\n"
+                    "• Adamaoua\n• Centre\n• Est\n• Extreme-Nord\n• Littoral\n• Nord\n"
+                    "• Nord-Ouest\n• Ouest\n• Sud\n• Sud-Ouest\n• General\n\n"
+                    "Example: 'change my role to farmer in Littoral'"
+                )
             }
 
         return change_role_to_farmer(user_id, region)
@@ -1205,6 +1260,26 @@ class ToolRouter:
         return {
             "status": "ok",
             "message": formatted
+        }
+
+    def _handle_location_input(self, text: str, user_id: str, context: dict) -> dict:
+        """Handle location input for listing after creation."""
+        from db.controller.listingController import update_listing
+
+        listing_id = context.get("listing_id")
+        town = text.strip()
+
+        # Update listing with town
+        result = update_listing(listing_id, user_id, {"town": town})
+
+        if result["status"] == "error":
+            return result
+
+        clear_state(user_id)
+
+        return {
+            "status": "ok",
+            "message": f"✅ Location updated! Your listing is now in {town}, {context['region']}"
         }
 
     def _unknown(self, entities, user_id, image_url=None, text=""):
