@@ -134,10 +134,26 @@ class ToolRouter:
 
             # ── awaiting_location ──────────────────────────────────────
             if state["state"] == "awaiting_location":
-                # Check if user wants to do something else
+                # Check if user wants to do something else (only high-confidence, clear intents)
                 if new_pipeline:
-                    clear_state(user_id)
-                    # Fall through to normal handler
+                    intent = new_pipeline["intent"]["intent"]
+                    confidence = new_pipeline["intent"]["confidence"]
+
+                    # Only clear state for very explicit intents (not ambiguous transcriptions)
+                    explicit_intents = [
+                        "greeting", "get_my_listings", "search_listings",
+                        "get_my_info", "show_available_products", "get_crop_price",
+                        "get_all_crop_prices", "get_my_interests", "view_listing_interests"
+                    ]
+
+                    if intent in explicit_intents and confidence > 0.7:
+                        clear_state(user_id)
+                        # Fall through to normal handler
+                    else:
+                        # Ambiguous or low confidence - treat as town name
+                        result = self._handle_location_input(text, user_id, state["context"])
+                        result["language"] = "en"
+                        return result
                 else:
                     # Treat as town name
                     result = self._handle_location_input(text, user_id, state["context"])
@@ -1265,9 +1281,42 @@ class ToolRouter:
     def _handle_location_input(self, text: str, user_id: str, context: dict) -> dict:
         """Handle location input for listing after creation."""
         from db.controller.listingController import update_listing
+        import re
 
         listing_id = context.get("listing_id")
+
+        # Clean up town name from potentially messy transcription
+        # Extract town names from common Cameroon cities
         town = text.strip()
+
+        # Check for common Cameroon cities in the text (case-insensitive)
+        common_cities = [
+            "Yaoundé", "Yaounde", "Douala", "Garoua", "Bafoussam", "Bamenda",
+            "Maroua", "Ngaoundéré", "Ngaoundere", "Bertoua", "Buea", "Limbe",
+            "Edéa", "Edea", "Kribi", "Kumba", "Nkongsamba", "Ebolowa"
+        ]
+
+        # Try to find a city name in the text
+        town_found = None
+        text_lower = text.lower()
+        for city in common_cities:
+            if city.lower() in text_lower:
+                town_found = city
+                break
+
+        # Use found city or clean up the input
+        if town_found:
+            town = town_found
+        else:
+            # Remove common filler words and extract potential town name
+            # Remove phrases like "in ", "from ", etc.
+            town = re.sub(r'\b(in|from|at|the|and|it\'s?|come|selling|money)\b', '', text, flags=re.IGNORECASE)
+            town = town.strip()
+
+            # Take first word/phrase if multiple words
+            words = town.split()
+            if words:
+                town = words[0].capitalize()
 
         # Update listing with town
         result = update_listing(listing_id, user_id, {"town": town})
