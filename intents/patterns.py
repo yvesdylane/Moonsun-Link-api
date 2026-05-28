@@ -324,4 +324,41 @@ INTENT_PATTERNS = {
             "deny interest 89"
         ]
     },
+
+    "get_crop_price": {
+        "keywords": [
+            "price of",
+            "how much is",
+            "cost of",
+            "what's the price",
+            "market price",
+            "how much does"
+        ],
+        "examples": [
+            "what's the price of maize",
+            "how much is cassava in Centre",
+            "maize price in Littoral",
+            "cost of tomatoes",
+            "market price for rice",
+            "how much does corn cost in Douala"
+        ]
+    },
+
+    "get_all_crop_prices": {
+        "keywords": [
+            "all prices",
+            "all crop prices",
+            "market overview",
+            "price overview",
+            "show prices",
+            "all market prices"
+        ],
+        "examples": [
+            "show all crop prices",
+            "market overview",
+            "what are the prices",
+            "price overview for all crops",
+            "show all market prices"
+        ]
+    },
 }

@@ -142,7 +142,15 @@ async def _handle_webhook(data: dict):
     elif "data" in result:
         listings_data = result["data"]
         show_seller = result.get("show_seller", False)
-        reply = format_listings(listings_data, show_seller=show_seller)
+        market_avg = result.get("market_avg")
+        reply = format_listings(listings_data, show_seller=show_seller, market_avg=market_avg)
+
+        # Add market price header or message prefix if provided
+        if result.get("market_price_header"):
+            reply = result["market_price_header"] + reply
+        elif result.get("message_prefix"):
+            reply = result["message_prefix"] + reply
+
         reply = translate_reply(reply, detected_lang)
         send_whatsapp_reply(chat_id, reply)
         full_reply = reply

@@ -40,7 +40,9 @@ Available intents:
 17. reject_interest - Farmer wants to reject a buyer's interest
 18. search_by_price - User searches for product at specific price
 19. view_listing_image - User wants to see the photo/image of a specific listing number
-20. unknown - None of the above match
+20. get_crop_price - User asks for crop price in specific region or all regions (e.g., "what's the price of maize?", "how much is cassava in Centre?")
+21. get_all_crop_prices - User wants overview of all crop prices (e.g., "show all crop prices", "market overview")
+22. unknown - None of the above match
 
 Extract entities:
 - product: crop name (maize, cassava, tomato, onion, plantain, yam, rice, etc.) — CRITICAL: ONLY extract if the user EXPLICITLY names a specific crop. NEVER set product when user says "price" (that's a different entity!). NEVER set product when user refers to listing by number (e.g. "number 2", "the fourth"). If no crop name is mentioned, set product to null.
@@ -90,8 +92,11 @@ Rules:
 - For "search_by_price", user asks if anyone is selling product at specific price
 - For "view_listing_interests", farmer asks to see buyer interests
 - For "view_listing_image", user asks to see photo/image of a listing number
+- For "get_crop_price", user asks about market price of a crop (can include region)
+- For "get_all_crop_prices", user asks for price overview of all crops
 - CRITICAL: When user says "update number X" or "the first one", extract listing_number and DO NOT extract product
 - CRITICAL DISTINCTION: "what products are available?" = show_available_products (names only), "show all listings" = search_listings (full details)
+- CRITICAL DISTINCTION: "what's the price of maize?" = get_crop_price (market prices), "find maize at 200 XAF" = search_by_price (listings at price)
 """
 
         try:

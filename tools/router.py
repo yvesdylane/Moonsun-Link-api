@@ -157,6 +157,8 @@ class ToolRouter:
             "reject_interest": self._reject_interest,
             "search_by_price": self._search_by_price,
             "view_listing_image": self._view_listing_image,
+            "get_crop_price": self._get_crop_price,
+            "get_all_crop_prices": self._get_all_crop_prices,
         }
 
         handler = routes.get(intent, self._unknown)
@@ -239,6 +241,8 @@ class ToolRouter:
 
     def _search_listings(self, entities, user_id, image_url=None, text=""):
         from db.controller.listingController import check_product_exists
+        from db.controller.cropPriceController import get_market_price_for_listing_search
+        from utils.formatter import format_market_price_header
 
         filters = {
             "crop_name": entities.get("product"),
@@ -248,6 +252,21 @@ class ToolRouter:
         }
 
         result = get_listings(page=1, **filters)
+
+        # Get market price header if crop is specified
+        market_price_header = None
+        if entities.get("product"):
+            market_price = get_market_price_for_listing_search(
+                crop_name=entities.get("product"),
+                region=entities.get("region")
+            )
+            if market_price["has_data"]:
+                market_price_header = format_market_price_header(
+                    market_price["crop_name"],
+                    market_price["avg_price"],
+                    market_price["scope"],
+                    market_price.get("region")
+                )
 
         # Store listing IDs and details in state for interest tracking
         if result["total"] > 0:
@@ -309,7 +328,13 @@ class ToolRouter:
                 }
 
         # Already set state above if listings exist
-        return {"status": "ok", "data": result, "show_seller": True}
+        return_data = {"status": "ok", "data": result, "show_seller": True}
+        if market_price_header:
+            return_data["market_price_header"] = market_price_header
+            # Also pass market average for price indicators
+            if market_price["has_data"]:
+                return_data["market_avg"] = market_price["avg_price"]
+        return return_data
 
     def _get_my_listings(self, entities, user_id, image_url=None, text=""):
         from datetime import datetime
@@ -865,6 +890,8 @@ class ToolRouter:
 
     def _search_by_price(self, entities, user_id, image_url=None, text=""):
         from db.controller.listingController import search_by_price
+        from db.controller.cropPriceController import get_market_price_for_listing_search
+        from utils.formatter import format_market_price_header
 
         product = entities.get("product")
         price = entities.get("price")
@@ -890,6 +917,16 @@ class ToolRouter:
             }
 
         if result["status"] == "ok":
+            # Get market price for context
+            market_price_header = None
+            market_price = get_market_price_for_listing_search(crop_name=product)
+            if market_price["has_data"]:
+                market_price_header = format_market_price_header(
+                    market_price["crop_name"],
+                    market_price["avg_price"],
+                    market_price["scope"]
+                )
+
             # Found close matches
             listing_ids = [listing[0] for listing in result["listings"]]
             set_state(user_id, "viewing_listings", {
@@ -905,12 +942,22 @@ class ToolRouter:
                 "total": len(result["listings"])
             }
 
-            return {
+            # Build message prefix with price range
+            min_p, max_p = result["price_range"]
+            message_prefix = f"🔍 Showing listings near {price} XAF/kg (±15% = {min_p}-{max_p})\n\n"
+            if market_price_header:
+                message_prefix = market_price_header + message_prefix
+
+            result_data = {
                 "status": "ok",
                 "data": listings_data,
                 "show_seller": True,
-                "message_prefix": f"💰 Found {len(result['listings'])} listing(s) near {price} XAF:\n\n"
+                "message_prefix": message_prefix
             }
+            # Pass market average for price indicators
+            if market_price["has_data"]:
+                result_data["market_avg"] = market_price["avg_price"]
+            return result_data
 
         if result["status"] == "alternatives":
             # Show nearest prices
@@ -1083,6 +1130,82 @@ class ToolRouter:
             result["buyer_notification"] = notification
 
         return result
+
+    def _get_crop_price(self, entities, user_id, image_url=None, text=""):
+        """Show crop price for specific region or all regions."""
+        from db.controller.cropPriceController import get_crop_price
+        from utils.formatter import format_crop_price_table
+
+        product = entities.get("product")
+        region = entities.get("region")
+
+        if not product:
+            return {
+                "status": "error",
+                "message": "Which crop's price do you want to see?\n\nExample: 'What's the price of maize?'"
+            }
+
+        result = get_crop_price(product, region)
+
+        if result["status"] == "error":
+            return result
+
+        if not result["prices"]:
+            if region:
+                return {
+                    "status": "ok",
+                    "message": (
+                        f"📊 *No Price Data for {product.capitalize()} in {region}*\n\n"
+                        f"Price information for this region hasn't been added yet.\n\n"
+                        f"💡 Try: 'What's the price of {product}?' to see other regions"
+                    )
+                }
+            else:
+                return {
+                    "status": "ok",
+                    "message": (
+                        f"📊 *No Price Data for {product.capitalize()}*\n\n"
+                        f"Market price information for {product.capitalize()} hasn't been added yet. "
+                        f"You can still search for listings!\n\n"
+                        f"💡 To see listings, send: 'Find {product}'"
+                    )
+                }
+
+        # Format table
+        table = format_crop_price_table(
+            result["crop_name"],
+            result["prices"],
+            result["overall_avg"],
+            region
+        )
+
+        # Add helpful tip
+        if region:
+            tip = f"\n\n💡 To see listings in {region}, send: 'Find {product} in {region}'"
+        else:
+            tip = f"\n\n💡 To see listings, send: 'Find {product}'"
+
+        return {
+            "status": "ok",
+            "message": table + tip
+        }
+
+    def _get_all_crop_prices(self, entities, user_id, image_url=None, text=""):
+        """Show price overview for all crops."""
+        from db.controller.cropPriceController import get_all_crop_prices
+        from utils.formatter import format_all_crop_prices
+
+        result = get_all_crop_prices()
+
+        if result["status"] == "error":
+            return result
+
+        formatted = format_all_crop_prices(result["crops"])
+
+        return {
+            "status": "ok",
+            "message": formatted
+        }
 
     def _unknown(self, entities, user_id, image_url=None, text=""):
         return {"status": "error", "message": "I didn't understand that. Try asking to sell, find, or delete a listing."}

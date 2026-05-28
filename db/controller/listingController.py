@@ -295,23 +295,27 @@ def check_product_exists(crop_name: str, region: str = None, max_price: int = No
     cur.close()
     return feedback
 
-def search_by_price(crop_name: str, target_price: int, tolerance: int = 50) -> dict:
+def search_by_price(crop_name: str, target_price: int, tolerance_percent: float = 15.0) -> dict:
     """
     Search for listings at or near a specific price point.
 
     Args:
         crop_name: Name of the crop/product
         target_price: Desired price per kg
-        tolerance: Price difference tolerance (default: 50 XAF)
+        tolerance_percent: Price tolerance as percentage (default: 15%)
 
     Returns:
         dict with exact matches or nearest alternatives
     """
     from db.controller.cropController import get_crop_id
+    from utils.price_helper import calculate_price_range
 
     crop_id = get_crop_id(crop_name)
     if not crop_id:
         return {"status": "error", "message": f"Product '{crop_name}' not recognized"}
+
+    # Calculate price range with percentage tolerance
+    min_price, max_price = calculate_price_range(target_price, tolerance_percent)
 
     cur = conn.cursor()
 
@@ -344,7 +348,7 @@ def search_by_price(crop_name: str, target_price: int, tolerance: int = 50) -> d
           AND l.price BETWEEN %s AND %s
         ORDER BY price_diff ASC, l.created_at DESC
         LIMIT 10
-    """, (target_price, crop_id, target_price - tolerance, target_price + tolerance))
+    """, (target_price, crop_id, min_price, max_price))
 
     close_matches = cur.fetchall()
 
@@ -354,6 +358,8 @@ def search_by_price(crop_name: str, target_price: int, tolerance: int = 50) -> d
             "status": "ok",
             "match_type": "close",
             "target_price": target_price,
+            "tolerance_percent": tolerance_percent,
+            "price_range": (min_price, max_price),
             "listings": close_matches,
             "message": f"Found {len(close_matches)} listing(s) near {target_price} XAF"
         }
