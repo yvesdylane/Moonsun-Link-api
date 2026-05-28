@@ -1,58 +1,107 @@
-import psycopg
 import os
 from dotenv import load_dotenv
+from psycopg_pool import ConnectionPool
+from contextlib import contextmanager
 
 load_dotenv()
 
-class AutoReconnectConnection:
-    def __init__(self):
-        self._conn = None
-        self._connect()
+# Create connection pool
+# min_size: minimum connections kept alive
+# max_size: maximum connections that can be created
+# timeout: time to wait for connection before raising error
+pool = ConnectionPool(
+    conninfo=(
+        f"host={os.getenv('DB_HOST')} "
+        f"dbname={os.getenv('DB_NAME')} "
+        f"user={os.getenv('DB_USER')} "
+        f"password={os.getenv('DB_PASSWORD')} "
+        f"port={os.getenv('DB_PORT')}"
+    ),
+    min_size=2,      # Keep 2 connections always ready
+    max_size=10,     # Maximum 10 concurrent connections
+    timeout=30,      # Wait up to 30s for connection
+    open=True        # Open pool immediately
+)
 
-    def _connect(self):
-        self._conn = psycopg.connect(
-            host=os.getenv("DB_HOST"),
-            dbname=os.getenv("DB_NAME"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            port=os.getenv("DB_PORT")
-        )
+print(f"✅ Database connection pool created (min=2, max=10)")
+
+
+@contextmanager
+def get_connection():
+    """
+    Get a connection from the pool.
+
+    Usage with context manager (recommended):
+        with get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT ...")
+            conn.commit()
+
+    The connection is automatically returned to the pool when exiting context.
+    """
+    conn = pool.getconn()
+    try:
+        yield conn
+    finally:
+        pool.putconn(conn)
+
+
+# Legacy support: conn object for existing code
+# This maintains backward compatibility with existing non-context-manager code
+class LegacyConnectionWrapper:
+    """
+    Wrapper to maintain backward compatibility with existing code.
+
+    Gets a connection from pool for each operation.
+    Properly returns connection after commit/rollback.
+
+    WARNING: Less efficient than context managers.
+    Migrate to get_connection() context manager for new code.
+    """
+
+    def __init__(self):
+        self._current_conn = None
 
     def cursor(self, *args, **kwargs):
-        try:
-            return self._conn.cursor(*args, **kwargs)
-        except psycopg.OperationalError:
-            print("DB connection lost, reconnecting...")
-            self._connect()
-            return self._conn.cursor(*args, **kwargs)
+        # Get fresh connection from pool if we don't have one
+        if self._current_conn is None:
+            self._current_conn = pool.getconn()
+        return self._current_conn.cursor(*args, **kwargs)
 
     def commit(self):
-        try:
-            self._conn.commit()
-        except psycopg.OperationalError:
-            print("DB connection lost on commit, reconnecting...")
-            self._connect()
-            self._conn.commit()
+        if self._current_conn:
+            try:
+                self._current_conn.commit()
+            finally:
+                # Return connection to pool
+                pool.putconn(self._current_conn)
+                self._current_conn = None
 
     def rollback(self):
-        """Rollback transaction to recover from errors."""
-        try:
-            self._conn.rollback()
-        except psycopg.OperationalError:
-            print("DB connection lost on rollback, reconnecting...")
-            self._connect()
+        if self._current_conn:
+            try:
+                self._current_conn.rollback()
+            finally:
+                # Return connection to pool
+                pool.putconn(self._current_conn)
+                self._current_conn = None
 
     def close(self):
-        if self._conn and not self._conn.closed:
-            self._conn.close()
+        # Return connection to pool if we have one
+        if self._current_conn:
+            pool.putconn(self._current_conn)
+            self._current_conn = None
 
     def __getattr__(self, name):
-        return getattr(self._conn, name)
+        # Forward any other attributes to current connection
+        if self._current_conn:
+            return getattr(self._current_conn, name)
+        # Get a connection if we don't have one
+        self._current_conn = pool.getconn()
+        return getattr(self._current_conn, name)
 
-try:
-    conn = AutoReconnectConnection()
-    print("Connected to PostgreSQL successfully!")
-except Exception as e:
-    print("Connection failed!")
-    print(e)
-    conn = None
+
+# Maintain backward compatibility
+conn = LegacyConnectionWrapper()
+
+print("✅ Connected to PostgreSQL successfully!")

@@ -10,7 +10,7 @@ pydantic==2.10.3
 python-telegram-bot==20.7
 
 # Database
-psycopg[binary]==3.2.3
+psycopg[binary,pool]==3.2.3
 
 # AI/ML - Groq for LLM + Whisper
 groq==0.13.0
