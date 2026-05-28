@@ -2,6 +2,7 @@ from db.connect import conn
 from db.controller.cropController import get_crop_id
 from db.controller.userController import get_user_role
 
+
 def create_listing(user_id, crop_name, quantity, price, town, region, image_url=None):
     crop_id = get_crop_id(crop_name)
     if not crop_id:
