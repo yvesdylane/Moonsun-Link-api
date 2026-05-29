@@ -317,6 +317,17 @@ async def _handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TY
         user_id = None
 
     result = router.handle(message, str(user_id) if user_id else None)
+
+    # Handle notifications (seller, buyer, farmer)
+    if result.get("seller_notification"):
+        await send_telegram_notification(context, result["seller_notification"])
+
+    if result.get("farmer_notification"):
+        await send_telegram_notification(context, result["farmer_notification"])
+
+    if result.get("buyer_notification"):
+        await send_telegram_notification(context, result["buyer_notification"])
+
     await send_telegram_reply(update, result)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -510,7 +521,62 @@ async def _handle_voice_inner(update: Update, context: ContextTypes.DEFAULT_TYPE
         os.unlink(tmp.name)
 
     result = router.handle(message, str(user_id) if user_id else None)
+
+    # Handle notifications (seller, buyer, farmer)
+    if result.get("seller_notification"):
+        await send_telegram_notification(context, result["seller_notification"])
+
+    if result.get("farmer_notification"):
+        await send_telegram_notification(context, result["farmer_notification"])
+
+    if result.get("buyer_notification"):
+        await send_telegram_notification(context, result["buyer_notification"])
+
     await send_telegram_reply(update, result)
+
+async def send_telegram_notification(context: ContextTypes.DEFAULT_TYPE, notification: dict):
+    """
+    Send notification to a Telegram user.
+
+    The router passes whatsapp_chat_id in notification['chat_id'].
+    We need to find the user by whatsapp_chat_id and send to their telegram_id.
+    """
+    from db.connect import conn
+    from utils.translator import translate_reply
+
+    if not notification.get("chat_id") or not notification.get("message"):
+        return
+
+    # The chat_id from router is whatsapp_chat_id
+    whatsapp_chat_id = notification["chat_id"]
+
+    # Get user info to find telegram_id and language
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT telegram_id, lang FROM users WHERE whatsapp_chat_id = %s
+    """, (whatsapp_chat_id,))
+    result = cur.fetchone()
+    cur.close()
+
+    if not result or not result[0]:
+        # User doesn't have Telegram linked
+        print(f"TELEGRAM NOTIFICATION SKIPPED: No Telegram linked for WhatsApp chat {whatsapp_chat_id}")
+        return
+
+    telegram_id, lang = result
+
+    # Translate notification message
+    message = translate_reply(notification["message"], lang)
+
+    try:
+        await context.bot.send_message(
+            chat_id=telegram_id,
+            text=message,
+            parse_mode="Markdown"
+        )
+        print(f"TELEGRAM NOTIFICATION SENT: {telegram_id}")
+    except Exception as e:
+        print(f"TELEGRAM NOTIFICATION ERROR to {telegram_id}: {e}")
 
 async def send_telegram_reply(update: Update, result: dict):
     detected_lang = result.get("language", "en")
