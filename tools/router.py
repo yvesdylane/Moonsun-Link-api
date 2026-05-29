@@ -747,28 +747,37 @@ class ToolRouter:
             # Use existing region from profile
             region = user.region if user.region else "General"
 
-        # If region is still "General", warn but allow (they can update later)
+        # If region is "General", ask them to update it first (set state)
+        if region == "General":
+            set_state(user_id, "awaiting_region_for_role_change", {})
+            return {
+                "status": "ok",
+                "message": (
+                    "📍 *Region Required*\n\n"
+                    "To become a farmer, please specify your primary region of operation.\n\n"
+                    "This helps buyers find your products.\n\n"
+                    "Send your region:\n"
+                    "• Centre\n• Littoral\n• Nord\n• Sud\n• Ouest\n• Est\n"
+                    "• Nord-Ouest\n• Sud-Ouest\n• Adamaoua\n• Extreme-Nord\n\n"
+                    "Or send 'General' if you operate across all Cameroon."
+                )
+            }
+
+        # Change role with specified region
         result = change_role_to_farmer(user_id, region)
 
-        # Add verification reminder and region update suggestion if successful
-        if result["status"] == "ok":
-            if region == "General":
-                result["message"] += (
-                    "\n\n💡 *Tip*: You're set to operate across all Cameroon (General).\n"
-                    "To specify your main region, send: 'update my region to [region name]'"
-                )
-
-            if not user.is_verified():
-                result["message"] += (
-                    "\n\n⚠️ *Verification Required*\n\n"
-                    "Your listings won't be visible to buyers until you verify your account.\n\n"
-                    "To get verified, send: 'verify my account'"
-                )
+        # Add verification reminder if successful
+        if result["status"] == "ok" and not user.is_verified():
+            result["message"] += (
+                "\n\n⚠️ *Verification Required*\n\n"
+                "Your listings won't be visible to buyers until you verify your account.\n\n"
+                "To get verified, send: 'verify my account'"
+            )
 
         return result
 
     def _update_profile(self, entities, user_id, image_url=None, text=""):
-        from db.controller.userController import update_user_info
+        from db.controller.userController import update_user_info, change_role_to_farmer, get_user_info
 
         updates = {}
 
@@ -783,7 +792,32 @@ class ToolRouter:
                 "message": "What would you like to update?\n\nYou can update:\n- Your name\n- Your region"
             }
 
-        return update_user_info(user_id, updates)
+        # Update profile
+        result = update_user_info(user_id, updates)
+
+        # Check if user was in the middle of changing role to farmer
+        state = get_state(user_id)
+        if state and state["state"] == "awaiting_region_for_role_change" and updates.get("region"):
+            clear_state(user_id)
+
+            # Now change role to farmer with the new region
+            role_result = change_role_to_farmer(user_id, updates["region"])
+
+            if role_result["status"] == "ok":
+                user = get_user_info(user_id)
+                result["message"] = (
+                    f"✅ Profile updated! Region: {updates['region']}\n\n"
+                    f"✅ Role changed to Farmer!"
+                )
+
+                if user and not user.is_verified():
+                    result["message"] += (
+                        "\n\n⚠️ *Verification Required*\n\n"
+                        "Your listings won't be visible to buyers until you verify your account.\n\n"
+                        "To get verified, send: 'verify my account'"
+                    )
+
+        return result
 
     def _show_available_products(self, entities, user_id, image_url=None, text=""):
         from db.controller.listingController import get_available_products
