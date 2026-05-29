@@ -150,9 +150,9 @@ async def _handle_webhook(data: dict):
     # Handle notifications (seller, buyer, farmer)
     if result.get("seller_notification"):
         seller_notif = result["seller_notification"]
-        if seller_notif.get("chat_id") and seller_notif.get("message"):
-            send_whatsapp_reply(seller_notif["chat_id"], seller_notif["message"])
-            print(f"SELLER NOTIFIED: {seller_notif['chat_id']}")
+        if seller_notif.get("whatsapp_chat_id") and seller_notif.get("message"):
+            send_whatsapp_reply(seller_notif["whatsapp_chat_id"], seller_notif["message"])
+            print(f"SELLER NOTIFIED (WhatsApp): {seller_notif['whatsapp_chat_id']}")
 
     if result.get("farmer_notification"):
         farmer_notif = result["farmer_notification"]

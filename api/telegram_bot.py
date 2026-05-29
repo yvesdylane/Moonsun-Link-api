@@ -538,35 +538,30 @@ async def send_telegram_notification(context: ContextTypes.DEFAULT_TYPE, notific
     """
     Send notification to a Telegram user.
 
-    The router passes whatsapp_chat_id in notification['chat_id'].
-    We need to find the user by whatsapp_chat_id and send to their telegram_id.
+    The router now passes telegram_id directly in notification['telegram_id'].
     """
     from db.connect import conn
     from utils.translator import translate_reply
 
-    if not notification.get("chat_id") or not notification.get("message"):
+    telegram_id = notification.get("telegram_id")
+    message = notification.get("message")
+
+    if not telegram_id or not message:
+        print(f"TELEGRAM NOTIFICATION SKIPPED: Missing telegram_id or message")
         return
 
-    # The chat_id from router is whatsapp_chat_id
-    whatsapp_chat_id = notification["chat_id"]
-
-    # Get user info to find telegram_id and language
+    # Get user's language preference
     cur = conn.cursor()
     cur.execute("""
-        SELECT telegram_id, lang FROM users WHERE whatsapp_chat_id = %s
-    """, (whatsapp_chat_id,))
+        SELECT lang FROM users WHERE telegram_id = %s
+    """, (telegram_id,))
     result = cur.fetchone()
     cur.close()
 
-    if not result or not result[0]:
-        # User doesn't have Telegram linked
-        print(f"TELEGRAM NOTIFICATION SKIPPED: No Telegram linked for WhatsApp chat {whatsapp_chat_id}")
-        return
-
-    telegram_id, lang = result
+    lang = result[0] if result else "en"
 
     # Translate notification message
-    message = translate_reply(notification["message"], lang)
+    message = translate_reply(message, lang)
 
     try:
         await context.bot.send_message(

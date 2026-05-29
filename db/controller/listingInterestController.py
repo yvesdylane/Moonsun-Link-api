@@ -16,9 +16,11 @@ def save_interest(listing_id: int, user_id: str, quantity: int = None, message: 
     """
     cur = conn.cursor()
 
-    # Get listing and seller information
+    # Get listing and seller information (both WhatsApp and Telegram)
     cur.execute("""
-        SELECT l.*, c.name as crop_name, u.name as seller_name, u.whatsapp_chat_id as seller_chat_id
+        SELECT l.*, c.name as crop_name, u.name as seller_name,
+               u.whatsapp_chat_id as seller_whatsapp_chat_id,
+               u.telegram_id as seller_telegram_id
         FROM listings l
         JOIN crops c ON l.crop_id = c.id
         JOIN users u ON l.user_id = u.id
@@ -89,7 +91,8 @@ def save_interest(listing_id: int, user_id: str, quantity: int = None, message: 
                 "phone": buyer_info[1],
             },
             "seller_notification": {
-                "seller_chat_id": listing_data[14],  # seller_chat_id from join
+                "seller_whatsapp_chat_id": listing_data[14],  # seller_whatsapp_chat_id from join
+                "seller_telegram_id": listing_data[15],  # seller_telegram_id from join
                 "buyer_name": buyer_info[0],
                 "buyer_phone": buyer_info[1],
                 "crop_name": listing_data[12],

@@ -897,12 +897,13 @@ class ToolRouter:
             f"The farmer has been notified and will contact you at {buyer['phone']} if interested."
         )
 
-        # Build seller notification
+        # Build seller notification (for both platforms)
         seller_notification = None
-        if seller_notif.get("seller_chat_id"):
+        if seller_notif.get("seller_whatsapp_chat_id") or seller_notif.get("seller_telegram_id"):
             quantity_text = f"📦 Quantity: {seller_notif['quantity']}kg\n" if seller_notif.get('quantity') else ""
             seller_notification = {
-                "chat_id": seller_notif["seller_chat_id"],
+                "whatsapp_chat_id": seller_notif.get("seller_whatsapp_chat_id"),
+                "telegram_id": seller_notif.get("seller_telegram_id"),
                 "message": (
                     f"🔔 *New Interest in Your Listing!*\n\n"
                     f"🌾 Product: {seller_notif['crop_name'].capitalize()}\n"
