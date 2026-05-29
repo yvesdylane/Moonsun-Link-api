@@ -239,12 +239,6 @@ class ToolRouter:
         if not user.is_farmer():
             return {"status": "error", "message": "Only farmers can create listings. To become a farmer, send: 'change my role to farmer in [your region]'"}
 
-        if not user.is_verified():
-            return {
-                "status": "error",
-                "message": "⚠️ Only verified farmers can create listings.\n\nYour listings won't be visible to buyers until you verify your account.\n\nTo verify, send: 'verify my account'"
-            }
-
         if not entities.get("product"):
             return {"status": "error", "message": "What crop do you want to sell?"}
         if not entities.get("quantity"):
@@ -296,6 +290,13 @@ class ToolRouter:
                 "price": result["price"],
                 "region": result["region"]
             })
+
+        # Warn unverified farmers
+        if not user.is_verified():
+            message += (
+                "\n\n⚠️ *Note:* Your listings won't be visible to buyers until you verify your account.\n\n"
+                "To verify, send: 'verify my account'"
+            )
 
         return {
             "status": "ok",
@@ -455,7 +456,8 @@ class ToolRouter:
         if not entities.get("product"):
             return {"status": "error", "message": "Which crop listing do you want to delete?"}
 
-        listings = get_listings(crop_name=entities.get("product"), user_id=user_id)
+        result = get_listings(crop_name=entities.get("product"), user_id=user_id, include_unverified=True)
+        listings = result["listings"]
 
         if not listings:
             return {"status": "error", "message": f"You have no {entities.get('product')} listings"}
@@ -527,7 +529,7 @@ class ToolRouter:
         if not entities.get("product"):
             return {"status": "error", "message": "Which crop listing do you want to update?"}
 
-        result = get_listings(crop_name=entities.get("product"), user_id=user_id)
+        result = get_listings(crop_name=entities.get("product"), user_id=user_id, include_unverified=True)
         listings = result["listings"]
 
         if not listings:
