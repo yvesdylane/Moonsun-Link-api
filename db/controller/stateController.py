@@ -1,5 +1,6 @@
 from db.connect import conn
 import json
+from psycopg.types.json import Jsonb
 
 def get_state(user_id: str) -> dict | None:
     cur = conn.cursor()
@@ -7,7 +8,8 @@ def get_state(user_id: str) -> dict | None:
     result = cur.fetchone()
     cur.close()
     if result:
-        return {"state": result[0], "context": result[1]}
+        # PostgreSQL jsonb type is already parsed by psycopg
+        return {"state": result[0], "context": result[1] if result[1] else {}}
     return None
 
 def set_state(user_id: str, state: str, context: dict = {}):
@@ -18,12 +20,12 @@ def set_state(user_id: str, state: str, context: dict = {}):
         cur.execute("""
             UPDATE conversation_state SET state = %s, context = %s, updated_at = NOW()
             WHERE user_id = %s
-        """, (state, json.dumps(context), user_id))
+        """, (state, Jsonb(context), user_id))
     else:
         cur.execute("""
             INSERT INTO conversation_state (user_id, state, context)
             VALUES (%s, %s, %s)
-        """, (user_id, state, json.dumps(context)))
+        """, (user_id, state, Jsonb(context)))
     conn.commit()
     cur.close()
 
