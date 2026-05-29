@@ -125,6 +125,9 @@ async def _handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TY
     message = update.message.text
     state = context.user_data.get("state")
 
+    # Show typing indicator while processing
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+
     # ── Registration flow ──────────────────────────────────────────────────
     if state == "awaiting_name":
         context.user_data["reg_name"] = message
@@ -187,6 +190,9 @@ async def _handle_voice_inner(update: Update, context: ContextTypes.DEFAULT_TYPE
     user = update.effective_user
     telegram_id = str(user.id)
     state = context.user_data.get("state")
+
+    # Show typing indicator while processing voice
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
 
     exist, user_id = check_if_user_exist_by_telegram(telegram_id)
     if not exist and state != "guest":
