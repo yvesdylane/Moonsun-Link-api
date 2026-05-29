@@ -25,9 +25,17 @@ async def lifespan(app: FastAPI):
     await async_pool.open()
     print("✅ Async database pool opened")
 
+    # Start Telegram bot
+    from api.telegram_bot import setup_handlers
+    setup_handlers(telegram_app)
+    await telegram_app.initialize()
+    await telegram_app.start()
+    print("✅ Telegram bot ready via webhook")
+
     yield
 
-    # Shutdown: Close async database pool
+    # Shutdown
+    await telegram_app.stop()
     await async_pool.close()
     print("✅ Async database pool closed")
 
@@ -192,18 +200,6 @@ async def _handle_webhook(data: dict):
 def chat(request: MessageRequest):
     result = router.handle(request.message)
     return result
-
-@app.on_event("startup")
-async def startup():
-    from api.telegram_bot import setup_handlers
-    setup_handlers(telegram_app)
-    await telegram_app.initialize()
-    await telegram_app.start()
-    print("Telegram bot ready via webhook")
-
-@app.on_event("shutdown")
-async def shutdown():
-    await telegram_app.stop()
 
 @app.post("/telegram")
 async def telegram_webhook(request: Request):
