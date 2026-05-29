@@ -16,35 +16,62 @@ LOGO_PATH = Path("Assets/logo.jpg")
 MARKET_URL = "https://placeholder.moonso.app"  # replace when ready`
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from utils.translator import translate_reply
+    from langdetect import detect
+
     user = update.effective_user
     telegram_id = str(user.id)
+    state = context.user_data.get("state")
+
+    # Detect language: try from stored context, then Telegram's language_code, then default to en
+    user_lang = context.user_data.get("user_lang")
+    if not user_lang:
+        # Check Telegram's language code
+        telegram_lang = user.language_code
+        if telegram_lang and telegram_lang.startswith("fr"):
+            user_lang = "fr"
+        else:
+            user_lang = "en"
+        context.user_data["user_lang"] = user_lang
 
     exist, user_id = check_if_user_exist_by_telegram(telegram_id)
 
-    if exist:
-        from db.controller.userController import get_user_by_telegram
-        db_user = get_user_by_telegram(telegram_id)
-        name = db_user[2]  # name column
-        await update.message.reply_text(
-            f"👋 Welcome back {name}! How can I help you today?\n\n"
-            "Just send me a message — I understand text and voice 🎙️"
-        )
+    # Existing user or guest who already started - just acknowledge
+    if exist or (state == "guest" and context.user_data.get("seen_welcome")):
+        if exist:
+            from db.controller.userController import get_user_by_telegram
+            db_user = get_user_by_telegram(telegram_id)
+            name = db_user[2]  # name column
+            reply = translate_reply(
+                f"👋 Welcome back {name}! How can I help you today?\n\n"
+                "Just send me a message — I understand text and voice 🎙️",
+                user_lang
+            )
+        else:
+            reply = translate_reply(
+                "👋 How can I help you today?\n\n"
+                "Just send me a message — I understand text and voice 🎙️",
+                user_lang
+            )
+        await update.message.reply_text(reply)
         return
 
-    # new user — show welcome card
+    # New user — show full welcome card
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🌱 Create account", callback_data="register")],
         [InlineKeyboardButton("🔗 Link WhatsApp account", callback_data="link_account")],
-        [InlineKeyboardButton("💬 Start chatting", callback_data="guest")],
+        [InlineKeyboardButton("💬 Start chatting as guest", callback_data="guest")],
         [InlineKeyboardButton("🛒 Open Marketplace", web_app={"url": MARKET_URL})],
     ])
 
-    caption = (
+    caption = translate_reply(
         "🌾 *Moonso Link*\n"
         "_Your digital farmer assistant & marketplace_\n\n"
         "Buy and sell farm products, check market prices, "
         "and get farming advice — all from your phone.\n\n"
-        "How would you like to get started?"
+        "📝 To create an account: /create\n"
+        "💬 To browse as guest: click below\n"
+        "🔗 To link existing account: click below",
+        user_lang
     )
 
     with open(LOGO_PATH, "rb") as logo:
@@ -54,6 +81,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=keyboard
         )
+
+async def create_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /create command - start registration flow"""
+    user = update.effective_user
+    telegram_id = str(user.id)
+
+    exist, user_id = check_if_user_exist_by_telegram(telegram_id)
+    if exist:
+        await update.message.reply_text("You already have an account! Just send me a message 🌾")
+        return
+
+    context.user_data["state"] = "awaiting_name"
+    await update.message.reply_text(
+        "Let's set up your account! 🌱\n\n"
+        "What is your name?"
+    )
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -77,11 +120,7 @@ async def _handle_callback_inner(update: Update, context: ContextTypes.DEFAULT_T
     user = update.effective_user
     telegram_id = str(user.id)
 
-    if data == "register":
-        context.user_data["state"] = "awaiting_name"
-        await query.message.reply_text("Let's set up your account! 🌱\n\nWhat is your name?")
-
-    elif data == "link_account":
+    if data == "link_account":
         context.user_data["state"] = "awaiting_phone_link"
         await query.message.reply_text(
             "Enter the phone number linked to your WhatsApp account:\n"
@@ -90,23 +129,38 @@ async def _handle_callback_inner(update: Update, context: ContextTypes.DEFAULT_T
         )
 
     elif data == "guest":
+        from utils.translator import translate_reply
+
         context.user_data["state"] = "guest"
-        await query.message.reply_text(
+        context.user_data["seen_welcome"] = True
+
+        # Try to detect language from previous interactions
+        user_lang = context.user_data.get("reg_lang", "en")
+
+        reply = translate_reply(
             "No problem! You can browse and ask questions freely 🌾\n\n"
             "To sell products or manage listings, you'll need an account. "
-            "Just send /start anytime to create one."
+            "Send /create anytime to create one.",
+            user_lang
         )
+        await query.message.reply_text(reply)
     elif data.startswith("region_"):
+        from utils.translator import translate_reply
+        user_lang = context.user_data.get("reg_lang", "en")
+
         region = data.replace("region_", "")
         reg_name = context.user_data.get("reg_name")
         reg_phone = context.user_data.get("reg_phone")
         user_id = create_user_from_telegram(telegram_id, reg_name, reg_phone, region)
         context.user_data["state"] = None
-        await query.message.reply_text(
+
+        reply = translate_reply(
             f"✅ Account created! Welcome to Moonso Link {reg_name} 🌾\n\n"
             "You can now sell products, check prices and manage your listings.\n"
-            "Just send me a message to get started!"
+            "Just send me a message to get started!",
+            user_lang
         )
+        await query.message.reply_text(reply)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -130,12 +184,29 @@ async def _handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TY
 
     # ── Registration flow ──────────────────────────────────────────────────
     if state == "awaiting_name":
+        from utils.translator import translate_to_english, translate_reply
+        from langdetect import detect
+
+        # Detect language for registration flow
+        try:
+            user_lang = detect(message)
+            if user_lang not in ("en", "fr"):
+                user_lang = "en"
+        except:
+            user_lang = "en"
+
         context.user_data["reg_name"] = message
+        context.user_data["reg_lang"] = user_lang
         context.user_data["state"] = "awaiting_phone"
-        await update.message.reply_text("What is your phone number? _(e.g. +237651234567)_", parse_mode="Markdown")
+
+        reply = translate_reply("What is your phone number? _(e.g. +237651234567)_", user_lang)
+        await update.message.reply_text(reply, parse_mode="Markdown")
         return
 
     if state == "awaiting_phone":
+        from utils.translator import translate_reply
+        user_lang = context.user_data.get("reg_lang", "en")
+
         context.user_data["reg_phone"] = message
         context.user_data["state"] = "awaiting_region"
         keyboard = InlineKeyboardMarkup([
@@ -150,7 +221,47 @@ async def _handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TY
             [InlineKeyboardButton("Adamaoua", callback_data="region_Adamaoua"),
               InlineKeyboardButton("Extreme-Nord", callback_data="region_Extreme-Nord")],
         ])
-        await update.message.reply_text("Which region are you from?", reply_markup=keyboard)
+
+        reply = translate_reply(
+            "Which region are you from?\n\n"
+            "You can click a button below OR type the region name.",
+            user_lang
+        )
+        await update.message.reply_text(reply, reply_markup=keyboard)
+        return
+
+    # Handle text-based region input during registration
+    if state == "awaiting_region":
+        from utils.translator import translate_reply
+        user_lang = context.user_data.get("reg_lang", "en")
+
+        valid_regions = ["Centre", "Littoral", "Nord", "Sud", "Ouest", "Est",
+                        "Nord-Ouest", "Sud-Ouest", "Adamaoua", "Extreme-Nord", "Extrême-Nord"]
+        # Normalize input
+        region_input = message.strip().title()
+        if region_input == "Extreme-Nord":
+            region_input = "Extreme-Nord"
+
+        if region_input in valid_regions:
+            reg_name = context.user_data.get("reg_name")
+            reg_phone = context.user_data.get("reg_phone")
+            user_id = create_user_from_telegram(telegram_id, reg_name, reg_phone, region_input)
+            context.user_data["state"] = None
+
+            reply = translate_reply(
+                f"✅ Account created! Welcome to Moonso Link {reg_name} 🌾\n\n"
+                "You can now sell products, check prices and manage your listings.\n"
+                "Just send me a message to get started!",
+                user_lang
+            )
+            await update.message.reply_text(reply)
+        else:
+            reply = translate_reply(
+                "❌ Invalid region. Please choose from the buttons or type one of:\n"
+                "Centre, Littoral, Nord, Sud, Ouest, Est, Nord-Ouest, Sud-Ouest, Adamaoua, Extreme-Nord",
+                user_lang
+            )
+            await update.message.reply_text(reply)
         return
 
     if state == "awaiting_phone_link":
@@ -166,9 +277,19 @@ async def _handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TY
     # ── Guest or registered user ───────────────────────────────────────────
     exist, user_id = check_if_user_exist_by_telegram(telegram_id)
 
-    if not exist and state != "guest":
-        await update.message.reply_text("Send /start to get started 🌾")
-        return
+    # If user doesn't exist and no state, automatically enable guest mode
+    if not exist and state is None:
+        context.user_data["state"] = "guest"
+        state = "guest"
+
+        # Detect and store user language on first message
+        from langdetect import detect
+        try:
+            detected_lang = detect(message)
+            if detected_lang in ("en", "fr"):
+                context.user_data["user_lang"] = detected_lang
+        except:
+            pass
 
     if state == "guest":
         user_id = None
@@ -252,6 +373,7 @@ async def send_telegram_reply(update: Update, result: dict):
 
 def setup_handlers(app: Application):
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("create", create_account))
     app.add_handler(CommandHandler("market", market))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
