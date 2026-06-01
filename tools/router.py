@@ -4,11 +4,68 @@ from db.controller.userController import get_user_role
 from db.controller.listingController import get_listings, create_listing, delete_listing, update_listing
 from db.controller.stateController import get_state, set_state, clear_state
 from utils.formatter import format_listing_item
+from intents.conversation import ConversationEngine
 
 
 class ToolRouter:
     def __init__(self):
         self.pipeline = AssistantPipeline()
+        self.conversation_engine = ConversationEngine()
+
+    def _save_conversation(self, user_id: str, user_msg: str, bot_msg: str, state: dict | None, prev_state: dict | None = None):
+        if state is None and prev_state is None:
+            set_state(user_id, "active", {
+                "conversation": [
+                    {"role": "user", "content": user_msg},
+                    {"role": "assistant", "content": (bot_msg or "")[:500]},
+                ]
+            })
+            return
+        if state is None:
+            fallback_ctx = prev_state.get("context", {}) if prev_state else {}
+            conversation = fallback_ctx.get("conversation", [])
+            conversation.append({"role": "user", "content": user_msg})
+            conversation.append({"role": "assistant", "content": (bot_msg or "")[:500]})
+            if len(conversation) > 20:
+                conversation = conversation[-20:]
+            set_state(user_id, "active", {"conversation": conversation})
+            return
+        context = state.get("context", {})
+        conversation = context.get("conversation", [])
+        conversation.append({"role": "user", "content": user_msg})
+        conversation.append({"role": "assistant", "content": (bot_msg or "")[:500]})
+        if len(conversation) > 20:
+            conversation = conversation[-20:]
+        context["conversation"] = conversation
+        current_state = state["state"]
+        set_state(user_id, current_state, context)
+
+    def _start_active_flow(self, user_id: str, action: str, collected: dict, missing: list):
+        state = get_state(user_id)
+        context = state.get("context", {}) if state else {}
+        context["active_flow"] = {
+            "action": action,
+            "collected": collected,
+            "missing": missing,
+        }
+        set_state(user_id, "collecting_fields", context)
+
+    def _recalculate_missing(self, collected: dict, action: str) -> list:
+        if action == "create_listing":
+            missing = []
+            if not collected.get("quantity"): missing.append("quantity")
+            if not collected.get("price"): missing.append("price")
+            if not collected.get("measurement"): missing.append("measurement")
+            return missing
+        return []
+
+    def _execute_active_flow(self, active_flow: dict, user_id: str, image_url: str = None) -> dict:
+        action = active_flow.get("action")
+        collected = active_flow.get("collected", {})
+        img = image_url or collected.get("image_url")
+        if action == "create_listing":
+            return self._do_create_listing(collected, user_id, img)
+        return {"status": "ok", "message": "Done!"}
 
     def handle(self, text: str, user_id: str, image_url: str = None) -> dict:
         try:
@@ -37,17 +94,60 @@ class ToolRouter:
             return pipeline_result
         return None
 
+    def _process_active_flow(self, text: str, user_id: str, state: dict, image_url: str = None) -> dict:
+        context = state.get("context", {})
+        active_flow = context.get("active_flow", {})
+        conversation = context.get("conversation", [])
+
+        result = self.conversation_engine.respond(conversation, active_flow, text)
+
+        extracted = result.get("extracted", {})
+        if image_url:
+            collected = active_flow.get("collected", {})
+            collected["image_url"] = image_url
+
+        if extracted:
+            collected = active_flow.get("collected", {})
+            collected.update(extracted)
+            action = active_flow.get("action")
+            active_flow["missing"] = self._recalculate_missing(collected, action)
+            context["active_flow"] = active_flow
+
+        if result.get("completed") or not active_flow.get("missing"):
+            clear_state(user_id)
+            return self._execute_active_flow(active_flow, user_id)
+
+        context["active_flow"] = active_flow
+        set_state(user_id, "collecting_fields", context)
+        return {
+            "status": "ok",
+            "message": result.get("message", "Please continue."),
+        }
+
     def _handle_inner(self, text: str, user_id: str, image_url: str = None) -> dict:
         state = get_state(user_id)
 
         if state:
             new_pipeline = self._check_new_intent(text)
 
+            # ── collecting_fields (active flow) ──────────────────────
+            if state["state"] == "collecting_fields":
+                if new_pipeline and new_pipeline["intent"]["confidence"] > 0.7:
+                    clear_state(user_id)
+                else:
+                    result = self._process_active_flow(text, user_id, state, image_url)
+                    fresh = get_state(user_id)
+                    self._save_conversation(user_id, text, result.get("message", ""), fresh, state)
+                    result["language"] = "en"
+                    return result
+
             # ── awaiting_delete_choice ─────────────────────────────────
             if state["state"] == "awaiting_delete_choice":
                 if text.strip().isdigit():
                     result = self._handle_delete_choice(text, user_id, state["context"])
                     result["language"] = "en"
+                    fresh = get_state(user_id)
+                    self._save_conversation(user_id, text, result.get("message", ""), fresh, state)
                     return result
                 if new_pipeline:
                     clear_state(user_id)
@@ -64,6 +164,8 @@ class ToolRouter:
                 if text.strip().isdigit():
                     result = self._handle_update_choice(text, user_id, state["context"])
                     result["language"] = "en"
+                    fresh = get_state(user_id)
+                    self._save_conversation(user_id, text, result.get("message", ""), fresh, state)
                     return result
                 if new_pipeline:
                     clear_state(user_id)
@@ -81,10 +183,14 @@ class ToolRouter:
                 if lower in ("next", "suivant"):
                     result = self._browse_page(user_id, state["context"], direction=1)
                     result["language"] = state["context"].get("language", "en")
+                    fresh = get_state(user_id)
+                    self._save_conversation(user_id, text, result.get("message", ""), fresh)
                     return result
                 if lower in ("previous", "prev", "précédent", "retour"):
                     result = self._browse_page(user_id, state["context"], direction=-1)
                     result["language"] = state["context"].get("language", "en")
+                    fresh = get_state(user_id)
+                    self._save_conversation(user_id, text, result.get("message", ""), fresh)
                     return result
                 if new_pipeline:
                     intent = new_pipeline["intent"]["intent"]
@@ -103,6 +209,8 @@ class ToolRouter:
                 if image_url:
                     result = self._handle_verification_selfie(user_id, image_url)
                     result["language"] = "en"
+                    fresh = get_state(user_id)
+                    self._save_conversation(user_id, text, result.get("message", ""), fresh)
                     return result
                 if new_pipeline:
                     clear_state(user_id)
@@ -117,6 +225,8 @@ class ToolRouter:
                 if image_url:
                     result = self._handle_verification_id(user_id, image_url)
                     result["language"] = "en"
+                    fresh = get_state(user_id)
+                    self._save_conversation(user_id, text, result.get("message", ""), fresh, state)
                     return result
                 if new_pipeline:
                     clear_state(user_id)
@@ -126,21 +236,13 @@ class ToolRouter:
                         "message": "🆔 Please send a photo of your ID card.\n\nJust send the image directly.\n\nAccepted formats: JPEG, PNG, PDF (max 2MB)"
                     }
 
-            # ── awaiting_location ──────────────────────────────────────
-            if state["state"] == "awaiting_location":
-                if new_pipeline and new_pipeline["intent"]["confidence"] > 0.7:
-                    clear_state(user_id)
-                else:
-                    result = self._handle_location_input(text, user_id, state["context"])
-                    result["language"] = "en"
-                    return result
-
         pipeline_result = self.pipeline.process(text)
         intent = pipeline_result["intent"]["intent"]
         entities = pipeline_result["entities"]
         language = pipeline_result["language"]
 
         routes = {
+            "about_bot": self._about_bot,
             "create_listing": self._create_listing,
             "search_listings": self._search_listings,
             "get_my_listings": self._get_my_listings,
@@ -172,6 +274,8 @@ class ToolRouter:
         handler = routes.get(intent, self._unknown)
         result = handler(entities, user_id, image_url, text)
         result["language"] = language
+        fresh_state = get_state(user_id)
+        self._save_conversation(user_id, text, result.get("message", ""), fresh_state, state)
         return result
 
     def _greeting(self, entities, user_id, image_url=None, text=""):
@@ -207,9 +311,15 @@ class ToolRouter:
             )
         }
 
+    def _about_bot(self, entities, user_id, image_url=None, text=""):
+        state = get_state(user_id)
+        context = state.get("context", {}) if state else {}
+        conversation = context.get("conversation", [])
+        result = self.conversation_engine.respond(conversation, None, text)
+        return {"status": "ok", "message": result.get("message", "I'm Moonso Link, an agricultural marketplace assistant for Cameroon.")}
+
     def _create_listing(self, entities, user_id, image_url=None, text=""):
         from db.controller.userController import get_user_info
-        from db.controller.productController import create_product
 
         user = get_user_info(user_id)
         if not user:
@@ -218,21 +328,37 @@ class ToolRouter:
         if not user.is_farmer():
             return {"status": "error", "message": "Only farmers can create listings. To become a farmer, send: 'change my role to farmer in [your region]'"}
 
-        # Check if Groq rejected the product as non-agriculture
         if entities.get("valid") is False:
             reason = entities.get("rejection_reason", "This product is not supported on Moonso Link.")
             return {"status": "error", "message": reason}
 
         if not entities.get("product"):
             return {"status": "error", "message": "What product do you want to sell?"}
-        if not entities.get("quantity"):
-            return {"status": "error", "message": "How much do you want to sell?"}
-        if not entities.get("price"):
-            return {"status": "error", "message": "What is your price in XAF?"}
 
+        collected = dict(entities)
+        missing = self._recalculate_missing(collected, "create_listing")
+
+        if missing:
+            self._start_active_flow(user_id, "create_listing", collected, missing)
+            prompts = {
+                "quantity": "How much do you want to sell? (e.g., '50 kg')",
+                "price": "What is your price in XAF? (e.g., '300 XAF')",
+                "measurement": "What unit of measurement? (e.g., 'kg', 'bag', 'bunch')",
+            }
+            return {
+                "status": "ok",
+                "message": prompts.get(missing[0], f"Please provide the {missing[0]}.")
+            }
+
+        return self._do_create_listing(collected, user_id, image_url)
+
+    def _do_create_listing(self, entities, user_id, image_url=None):
+        from db.controller.userController import get_user_info
+        from db.controller.productController import create_product
+
+        user = get_user_info(user_id)
         product_name = entities.get("product")
 
-        # Auto-create product if it's not in the DB yet
         if entities.get("auto_create"):
             product_type = entities.get("product_type", "crop")
             default_measurement = entities.get("default_measurement")
@@ -277,18 +403,13 @@ class ToolRouter:
             message += f"\n\n⚠️ *{reason}*"
 
         if result.get("missing_location"):
+            collected = dict(entities)
+            collected.update({"listing_id": result["listing_id"]})
+            self._start_active_flow(user_id, "create_listing", collected, ["location"])
             message += (
                 f"\n\n⚠️ Location not specified - Buyers prefer to know where products are sold.\n\n"
                 f"Send the town name (e.g., 'Yaoundé', 'Douala') to add location, or send another command to skip."
             )
-            set_state(user_id, "awaiting_location", {
-                "listing_id": result["listing_id"],
-                "product_name": result["product_name"],
-                "quantity": result["quantity"],
-                "measurement": measurement,
-                "price": result["price"],
-                "region": result["region"],
-            })
 
         if not user.is_verified():
             message += (
@@ -1238,23 +1359,6 @@ class ToolRouter:
 
         return {"status": "ok", "message": formatted}
 
-    def _handle_location_input(self, text: str, user_id: str, context: dict) -> dict:
-        """Handle location input for listing after creation."""
-        from db.controller.listingController import update_listing
-
-        listing_id = context.get("listing_id")
-        town = text.strip().title()
-
-        if result["status"] == "error":
-            return result
-
-        clear_state(user_id)
-
-        return {
-            "status": "ok",
-            "message": f"✅ Location updated! Your listing is now in {town}, {context['region']}"
-        }
-
     def _report_issue(self, entities, user_id, image_url=None, text=""):
         from db.controller.reportController import create_report
 
@@ -1374,7 +1478,7 @@ class ToolRouter:
                     "   We don't have a verified solution for this yet, but we can "
                     "provide AI-generated advice. Note: this advice is not verified "
                     "and should be used with caution.\n"
-                    "   Reply: 'give me advice for issue {issue_id}' to get it.")
+                    f"   Reply: 'give me advice for issue {result['issue_id']}' to get it.")
 
         if issue_type in ("disease", "pest"):
             msg += ("\n\n📢 This issue has also been sent as a report to our team "
@@ -1456,4 +1560,10 @@ class ToolRouter:
         return {"status": "ok", "message": msg}
 
     def _unknown(self, entities, user_id, image_url=None, text=""):
-        return {"status": "error", "message": "I didn't understand that. Try asking to sell, find, or delete a listing."}
+        state = get_state(user_id)
+        context = state.get("context", {}) if state else {}
+        conversation = context.get("conversation", [])
+
+        result = self.conversation_engine.respond(conversation, None, text)
+        msg = result.get("message", "I didn't understand that. Try asking to sell, find, or delete a listing.")
+        return {"status": "ok", "message": msg}

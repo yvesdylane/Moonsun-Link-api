@@ -16,6 +16,7 @@ class GroqIntentClassifier:
         self.last_429 = {}
         self.product_whitelist_str = self._load_product_whitelist()
         self.location_whitelist_str = self._load_location_whitelist()
+        self.bot_persona = self._load_bot_persona()
 
     def _load_all_clients(self) -> list:
         keys = []
@@ -121,6 +122,14 @@ class GroqIntentClassifier:
 
         return "\n".join(lines)
 
+    def _load_bot_persona(self) -> str:
+        try:
+            with open(os.path.join(os.path.dirname(__file__), "me.md"), encoding="utf-8") as f:
+                return f.read()
+        except Exception as e:
+            print(f"Error loading me.md: {e}")
+            return "# Moonso Link\nAgricultural marketplace assistant for Cameroon."
+
     def classify(self, text: str) -> dict:
         """
         Use Groq to classify user intent and extract entities.
@@ -131,7 +140,11 @@ class GroqIntentClassifier:
 
         system_prompt = f"""You are an intent classifier for Moonso Link, an agricultural marketplace platform.
 
+BOT IDENTITY:
+{self.bot_persona}
+
 Available intents:
+0. about_bot - User asks about the bot itself (who are you, who made you, tell me about yourself, what can you do)
 1. greeting - User says hello or greets the bot
 2. create_listing - User wants to sell/post a product
 3. search_listings - User wants to find/browse products with specific criteria OR see all marketplace listings
@@ -245,6 +258,11 @@ Respond ONLY with valid JSON in this exact format:
 }}
 
 EXAMPLES:
+"who are you" → intent:about_bot
+"who made you" → intent:about_bot
+"tell me about yourself" → intent:about_bot
+"what are you" → intent:about_bot
+"what can you do" → intent:about_bot
 "I want to sell 50kg of mangoes at 300 XAF" → product not in whitelist but IS agriculture (fruit) → auto_create:true, product_type:"crop"
 "I want to sell my dresses" → not agriculture → product:null, valid:false, rejection_reason:"Dresses are not an agricultural product. We only support agriculture-related products such as crops, livestock, farming tools, and agricultural services."
 "I want to sell a bag of rice" → "rice" is in whitelist → product:"rice", auto_create:false
