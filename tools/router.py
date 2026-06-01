@@ -134,10 +134,6 @@ class ToolRouter:
                     result = self._handle_location_input(text, user_id, state["context"])
                     result["language"] = "en"
                     return result
-                else:
-                    result = self._handle_location_input(text, user_id, state["context"])
-                    result["language"] = "en"
-                    return result
 
         pipeline_result = self.pipeline.process(text)
         intent = pipeline_result["intent"]["intent"]
@@ -270,6 +266,10 @@ class ToolRouter:
 
         if entities.get("auto_create"):
             message = f"🆕 New product '{product_name.capitalize()}' added to our catalog!\n\n" + message
+
+        if entities.get("location_valid") is False:
+            reason = entities.get("location_rejection_reason", "We only support locations in Cameroon.")
+            message += f"\n\n⚠️ *{reason}*"
 
         if result.get("missing_location"):
             message += (
@@ -1232,32 +1232,7 @@ class ToolRouter:
         from db.controller.listingController import update_listing
 
         listing_id = context.get("listing_id")
-        town = text.strip()
-
-        common_cities = [
-            "Yaoundé", "Yaounde", "Douala", "Garoua", "Bafoussam", "Bamenda",
-            "Maroua", "Ngaoundéré", "Ngaoundere", "Bertoua", "Buea", "Limbe",
-            "Edéa", "Edea", "Kribi", "Kumba", "Nkongsamba", "Ebolowa",
-        ]
-
-        town_found = None
-        text_lower = text.lower()
-        for city in common_cities:
-            if city.lower() in text_lower:
-                town_found = city
-                break
-
-        if town_found:
-            town = town_found
-        else:
-            import re
-            town = re.sub(r'\b(in|from|at|the|and|it\'s?|come|selling|money)\b', '', text, flags=re.IGNORECASE)
-            town = town.strip()
-            words = town.split()
-            if words:
-                town = words[0].capitalize()
-
-        result = update_listing(listing_id, user_id, {"town": town})
+        town = text.strip().title()
 
         if result["status"] == "error":
             return result

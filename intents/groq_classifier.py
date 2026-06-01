@@ -12,6 +12,7 @@ class GroqIntentClassifier:
         self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
         self.model = "llama-3.3-70b-versatile"
         self.product_whitelist_str = self._load_product_whitelist()
+        self.location_whitelist_str = self._load_location_whitelist()
 
     def _load_product_whitelist(self) -> str:
         """Build a formatted string of all approved products from the DB."""
@@ -33,6 +34,25 @@ class GroqIntentClassifier:
         for ptype in ["crop", "animal", "tool", "service"]:
             if groups[ptype]:
                 lines.append(f"{ptype}s: {', '.join(groups[ptype])}")
+
+        return "\n".join(lines)
+
+    def _load_location_whitelist(self) -> str:
+        """Build a formatted string of towns with regions from the DB."""
+        cur = conn.cursor()
+        cur.execute("SELECT town, region FROM locations ORDER BY region, town")
+        rows = cur.fetchall()
+        cur.close()
+
+        groups = {}
+        for town, region in rows:
+            groups.setdefault(region, []).append(town)
+
+        lines = []
+        for region in ["Adamaoua", "Centre", "Est", "Extreme-Nord", "Littoral", "Nord", "Nord-Ouest", "Ouest", "Sud", "Sud-Ouest"]:
+            towns = groups.get(region, [])
+            if towns:
+                lines.append(f"{region}: {', '.join(towns)}")
 
         return "\n".join(lines)
 
@@ -81,6 +101,21 @@ PRODUCT VALIDATION RULES (CRITICAL):
     - If YES: set product to the name, auto_create to true, product_type to the correct type (crop/animal/tool/service), and default_measurement to the appropriate unit.
     - If NO (e.g., dresses, watches, phones, electronics, furniture, clothes, shoes, bags that aren't agricultural): set product to null, auto_create to false, valid to false, and rejection_reason to a helpful message saying we only support agriculture-related products.
 
+LOCATION WHITELIST — Cameroonian towns (town → region):
+{self.location_whitelist_str}
+
+LOCATION VALIDATION RULES (CRITICAL):
+- If the user mentions a location (town/city):
+  - Check if it matches an entry in the whitelist above (case-insensitive, handle accents like é, è, etc.).
+    - If found: set location to the EXACT whitelist name, set region to the corresponding region, set location_valid to true, location_auto_create to false.
+  - If NOT in the whitelist, decide:
+    - Is it a REAL Cameroonian town? (something that actually exists in Cameroon, even if not in our database yet)
+      - If YES: set location to the town name the user provided, set region to the correct Cameroonian region, set location_valid to true, set location_auto_create to true.
+      - If NO (clearly not a Cameroonian town — Paris, Berlin, New York, London, Dubai, Lagos, Nairobi, Kigali, Abidjan, Accra, etc.): set location to null, region to null, location_valid to false, and location_rejection_reason to a message saying "We only support locations in Cameroon. Please specify a Cameroonian town."
+  - If no location is mentioned, leave all location fields as null.
+
+IMPORTANT: town and region must ALWAYS be consistent. If you set a location, derive the correct region from it. Do NOT set contradictory location/region pairs.
+
 Extract entities:
 - product: the exact product name from the whitelist, or a new agriculture product name if auto-creating
 - quantity: numeric amount — also recognize "quality" as misspelling of quantity
@@ -96,6 +131,9 @@ Extract entities:
 - rejection_reason: string explaining why product was rejected
 - product_type: crop/animal/tool/service — only needed when auto_create is true
 - default_measurement: kg/head/piece/task — only needed when auto_create is true
+- location_valid: true/false — set to false ONLY for non-Cameroonian locations
+- location_rejection_reason: string — explain why location was rejected; only when location_valid is false
+- location_auto_create: true/false — set to true if real CM town not in whitelist
 
 Respond ONLY with valid JSON in this exact format:
 {{
@@ -115,7 +153,10 @@ Respond ONLY with valid JSON in this exact format:
         "valid": true,
         "rejection_reason": null,
         "product_type": null,
-        "default_measurement": null
+        "default_measurement": null,
+        "location_valid": true,
+        "location_rejection_reason": null,
+        "location_auto_create": false
     }}
 }}
 
@@ -157,6 +198,9 @@ EXAMPLES:
             entities.setdefault("rejection_reason", None)
             entities.setdefault("product_type", None)
             entities.setdefault("default_measurement", None)
+            entities.setdefault("location_valid", True)
+            entities.setdefault("location_rejection_reason", None)
+            entities.setdefault("location_auto_create", False)
 
             result["method"] = "groq"
 
@@ -199,6 +243,9 @@ EXAMPLES:
                     "rejection_reason": None,
                     "product_type": None,
                     "default_measurement": None,
+                    "location_valid": True,
+                    "location_rejection_reason": None,
+                    "location_auto_create": False,
                 },
             }
 

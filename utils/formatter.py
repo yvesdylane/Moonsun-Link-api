@@ -1,8 +1,8 @@
 def format_listing_item(listing: tuple, show_seller: bool = False, listing_number: int = None, market_avg: float = None) -> str:
-    # l.* columns (13 cols): id=0, user_id=1, product_id=2, quantity=3, measurement=4,
-    #                         price=5, town=6, region=7, origin=8, image_url=9,
-    #                         expires_at=10, created_at=11, updated_at=12
-    # then: product_name=13, seller_name=14 (if joined)
+    # Column indices: id=0, user_id=1, product_id=2, quantity=3, measurement=4,
+    #                   price=5, town=6, region=7, origin=8, image_url=9,
+    #                   expires_at=10, created_at=11, updated_at=12
+    #                   product_name=13, seller_name=14 (if joined)
     product_name = listing[13].capitalize()
     quantity = listing[3]
     measurement = listing[4] or "kg"

@@ -17,12 +17,16 @@ def save_interest(listing_id: int, user_id: str, quantity: int = None, message: 
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT l.*, p.name as product_name, u.name as seller_name,
+        SELECT l.id, l.user_id, l.product_id, l.quantity, l.measurement, l.price,
+               loc.town, loc.region, l.origin, l.image_url,
+               l.expires_at, l.created_at, l.updated_at,
+               p.name as product_name, u.name as seller_name,
                u.whatsapp_chat_id as seller_whatsapp_chat_id,
                u.telegram_id as seller_telegram_id
         FROM listings l
         JOIN products p ON l.product_id = p.id
         JOIN users u ON l.user_id = u.id
+        LEFT JOIN locations loc ON l.location_id = loc.id
         WHERE l.id = %s AND u.verified = 'true'
     """, (listing_id,))
 
@@ -71,10 +75,10 @@ def save_interest(listing_id: int, user_id: str, quantity: int = None, message: 
         conn.commit()
         cur.close()
 
-        # l.* indices (13 cols): id=0, user_id=1, product_id=2, quantity=3, measurement=4,
-        #                         price=5, town=6, region=7, origin=8, image_url=9,
-        #                         expires_at=10, created_at=11, updated_at=12
-        # then: product_name=13, seller_name=14, seller_whatsapp_chat_id=15, seller_telegram_id=16
+        # Column indices: id=0, user_id=1, product_id=2, quantity=3, measurement=4,
+        #                   price=5, town=6, region=7, origin=8, image_url=9,
+        #                   expires_at=10, created_at=11, updated_at=12
+        #                   product_name=13, seller_name=14, seller_whatsapp_chat_id=15, seller_telegram_id=16
         return {
             "status": "ok",
             "interest_id": interest_id,

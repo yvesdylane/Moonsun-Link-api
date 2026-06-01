@@ -23,15 +23,16 @@ class AssistantPipeline:
 
         # Merge entities:
         # - Product: trust Groq exclusively (handles whitelist, auto-create, rejection)
-        # - Other fields: Groq first, regex fallback for numeric/measurement fields
+        # - Location/region/origin: trust Groq exclusively (handles whitelist, auto-create, rejection)
+        # - Numeric/measurement: Groq first, regex fallback
         entities = {
             "product": groq_entities.get("product"),
             "quantity": groq_entities.get("quantity") or regex_entities.get("quantity"),
             "measurement": groq_entities.get("measurement") or regex_entities.get("measurement"),
             "price": groq_entities.get("price") or regex_entities.get("price"),
-            "location": groq_entities.get("location") or regex_entities.get("location"),
-            "region": groq_entities.get("region") or regex_entities.get("region"),
-            "origin": groq_entities.get("origin") or regex_entities.get("origin"),
+            "location": groq_entities.get("location"),
+            "region": groq_entities.get("region"),
+            "origin": groq_entities.get("origin"),
             "name": groq_entities.get("name"),
             "listing_number": groq_entities.get("listing_number"),
             "auto_create": groq_entities.get("auto_create", False),
@@ -39,6 +40,9 @@ class AssistantPipeline:
             "rejection_reason": groq_entities.get("rejection_reason"),
             "product_type": groq_entities.get("product_type"),
             "default_measurement": groq_entities.get("default_measurement"),
+            "location_valid": groq_entities.get("location_valid", True),
+            "location_rejection_reason": groq_entities.get("location_rejection_reason"),
+            "location_auto_create": groq_entities.get("location_auto_create", False),
         }
 
         intent = {

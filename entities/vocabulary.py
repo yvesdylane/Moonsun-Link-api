@@ -24,13 +24,6 @@ PRODUCTS = [
     "weeding", "fencing", "installation",
 ]
 
-LOCATIONS = [
-    "yaounde", "douala", "bafoussam", "bamenda",
-    "garoua", "maroua", "bertoua", "ebolowa",
-    "nkongsamba", "kumba", "limbe", "buea",
-    "dschang", "mbouda", "foumban", "kousseri",
-]
-
 PRODUCT_SYNONYMS = {
     "corn": "maize",
     "manioc": "cassava",
@@ -74,49 +67,6 @@ PRODUCT_SYNONYMS = {
     "land preparation": "land clearing",
     "mechanical work": "mechanic",
     "vet": "veterinary",
-}
-
-REGIONS = [
-    "Adamaoua", "Centre", "Est", "Extreme-Nord",
-    "Littoral", "Nord", "Nord-Ouest",
-    "Ouest", "Sud", "Sud-Ouest", "General"
-]
-
-PRODUCT_TYPES = {
-    # crops
-    "maize": "crop", "corn": "crop", "cassava": "crop",
-    "tomato": "crop", "onion": "crop", "plantain": "crop",
-    "yam": "crop", "cocoyam": "crop", "groundnut": "crop",
-    "pepper": "crop", "beans": "crop", "rice": "crop",
-    "sorghum": "crop", "palm oil": "crop", "banana": "crop",
-    "mango": "crop", "sweet potato": "crop", "potato": "crop",
-    "cabbage": "crop", "carrot": "crop", "pineapple": "crop",
-    "papaya": "crop", "avocado": "crop", "garlic": "crop",
-    "ginger": "crop", "okra": "crop", "spinach": "crop",
-    "lettuce": "crop", "cucumber": "crop", "pumpkin": "crop",
-    "coffee": "crop", "cocoa": "crop", "cotton": "crop",
-    "sugarcane": "crop",
-    # animals
-    "chicken": "animal", "goat": "animal", "sheep": "animal",
-    "cattle": "animal", "cow": "animal", "pig": "animal",
-    "horse": "animal", "donkey": "animal", "duck": "animal",
-    "turkey": "animal", "rabbit": "animal", "fish": "animal",
-    "snail": "animal", "grasscutter": "animal",
-    # tools
-    "hoe": "tool", "machete": "tool", "shovel": "tool",
-    "rake": "tool", "wheelbarrow": "tool", "watering can": "tool",
-    "sprayer": "tool", "pump": "tool", "tractor": "tool",
-    "plough": "tool", "harvester": "tool", "irrigation pipe": "tool",
-    "cutlass": "tool", "axe": "tool", "sickle": "tool",
-    "net": "tool", "cage": "tool",
-    # services
-    "ploughing": "service", "plowing": "service", "tilling": "service",
-    "harvesting": "service", "spraying": "service", "irrigation": "service",
-    "transport": "service", "delivery": "service", "mechanic": "service",
-    "veterinary": "service", "consulting": "service", "training": "service",
-    "land clearing": "service", "pruning": "service", "grafting": "service",
-    "sowing": "service", "weeding": "service", "fencing": "service",
-    "installation": "service",
 }
 
 # Default measurements by product type

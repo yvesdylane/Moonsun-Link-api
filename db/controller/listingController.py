@@ -7,6 +7,49 @@ from entities.vocabulary import TYPE_DEFAULT_MEASUREMENTS
 SERVICE_PRODUCT_TYPES = {"service"}
 
 
+def _get_or_create_location_id(town: str, region: str = None) -> int | None:
+    """Resolve a town name to a location_id, auto-creating if needed."""
+    if not town:
+        return None
+
+    cur = conn.cursor()
+
+    if region:
+        cur.execute(
+            "SELECT id FROM locations WHERE LOWER(town) = LOWER(%s) AND region = %s",
+            (town, region)
+        )
+        row = cur.fetchone()
+        if row:
+            cur.close()
+            return row[0]
+
+    cur.execute(
+        "SELECT id FROM locations WHERE LOWER(town) = LOWER(%s)",
+        (town,)
+    )
+    row = cur.fetchone()
+    if row:
+        cur.close()
+        return row[0]
+
+    insert_region = region if region else "General"
+    try:
+        cur.execute(
+            "INSERT INTO locations (town, region) VALUES (%s, %s) RETURNING id",
+            (town, insert_region)
+        )
+        new_id = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+        return new_id
+    except Exception as e:
+        print(f"LOCATION AUTO-CREATE ERROR: {e}")
+        conn.rollback()
+        cur.close()
+        return None
+
+
 def create_listing(user_id, product_name, quantity, price, measurement=None,
                    town=None, region=None, origin=None, image_url=None):
     """
@@ -28,6 +71,9 @@ def create_listing(user_id, product_name, quantity, price, measurement=None,
     if not measurement:
         measurement = info.get("default_measurement") or TYPE_DEFAULT_MEASUREMENTS.get(product_type, "kg")
 
+    # Resolve town to location_id
+    location_id = _get_or_create_location_id(town, region)
+
     # Get user's region if not specified
     if not region:
         from db.controller.userController import get_user_info
@@ -46,11 +92,11 @@ def create_listing(user_id, product_name, quantity, price, measurement=None,
 
     cur = conn.cursor()
     query = f"""
-        INSERT INTO listings (user_id, product_id, quantity, measurement, price, town, region, origin, image_url, expires_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, {expires_at})
+        INSERT INTO listings (user_id, product_id, quantity, measurement, price, location_id, origin, image_url, expires_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, {expires_at})
         RETURNING id
     """
-    cur.execute(query, (user_id, product_id, quantity, measurement, price, town, region, origin, image_url))
+    cur.execute(query, (user_id, product_id, quantity, measurement, price, location_id, origin, image_url))
     listing_id = cur.fetchone()[0]
     conn.commit()
     cur.close()
@@ -89,6 +135,16 @@ def update_listing(listing_id: int, user_id: str, updates: dict):
     if not updates:
         return {"status": "error", "message": "Nothing to update"}
 
+    # Handle town → location_id conversion
+    if "town" in updates:
+        town = updates.pop("town")
+        region = updates.pop("region", None)
+        if town:
+            location_id = _get_or_create_location_id(town, region)
+            updates["location_id"] = location_id
+        else:
+            updates["location_id"] = None
+
     fields = [f"{key} = %s" for key in updates.keys()]
     values = list(updates.values())
     values.extend([listing_id, user_id])
@@ -121,10 +177,10 @@ def get_listings(page=1, limit=10, product_name=None, town=None, region=None,
         filters.append("l.product_id = %s")
         values.append(product_id)
     if town:
-        filters.append("l.town ILIKE %s")
+        filters.append("loc.town ILIKE %s")
         values.append(f"%{town}%")
     if region:
-        filters.append("(l.region = %s OR l.region = 'General')")
+        filters.append("(loc.region = %s OR l.origin = 'General')")
         values.append(region)
     if max_price:
         filters.append("l.price <= %s")
@@ -159,15 +215,20 @@ def get_listings(page=1, limit=10, product_name=None, town=None, region=None,
         FROM listings l
         JOIN products p ON l.product_id = p.id
         JOIN users u ON l.user_id = u.id
+        LEFT JOIN locations loc ON l.location_id = loc.id
         {where}
     """, values)
     total = cur.fetchone()[0]
 
     cur.execute(f"""
-        SELECT l.*, p.name as product_name, u.name as seller_name
+        SELECT l.id, l.user_id, l.product_id, l.quantity, l.measurement, l.price,
+               loc.town, loc.region, l.origin, l.image_url,
+               l.expires_at, l.created_at, l.updated_at,
+               p.name as product_name, u.name as seller_name
         FROM listings l
         JOIN products p ON l.product_id = p.id
         JOIN users u ON l.user_id = u.id
+        LEFT JOIN locations loc ON l.location_id = loc.id
         {where}
         ORDER BY l.created_at DESC
         LIMIT %s OFFSET %s
@@ -230,69 +291,7 @@ def get_product_locations(product_name: str) -> dict:
         SELECT COUNT(*)
         FROM listings l
         JOIN users u ON l.user_id = u.id
-        WHERE l.product_id = %s AND u.verified = 'true'
-    """, (product_id,))
-
-    count = cur.fetchone()[0]
-
-    if count == 0:
-        cur.close()
-        return {
-            "status": "not_found",
-            "product": product_name,
-            "message": f"No one is currently selling {product_name}",
-        }
-
-    cur.execute("""
-        SELECT DISTINCT l.region, l.town
-        FROM listings l
-        JOIN users u ON l.user_id = u.id
-        WHERE l.product_id = %s AND u.verified = 'true'
-        ORDER BY l.region, l.town
-    """, (product_id,))
-
-    locations = cur.fetchall()
-    cur.close()
-
-    regions_data = {}
-    for region, town in locations:
-        if region not in regions_data:
-            regions_data[region] = []
-        if town and town not in regions_data[region]:
-            regions_data[region].append(town)
-
-    return {
-        "status": "ok",
-        "product": product_name,
-        "count": count,
-        "regions": regions_data,
-    }
-
-
-def check_product_exists(product_name: str, region: str = None, max_price: int = None) -> dict:
-    """
-    Check if a product exists in verified listings and where it fails criteria.
-
-    Args:
-        product_name: Name of the product
-        region: Optional region filter
-        max_price: Optional maximum price filter
-
-    Returns:
-        dict with existence status and alternative suggestions
-    """
-    info = get_product_info(product_name)
-    if not info:
-        return {"exists": False, "reason": "unknown_product"}
-
-    product_id = info["id"]
-
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT COUNT(*)
-        FROM listings l
-        JOIN users u ON l.user_id = u.id
+        LEFT JOIN locations loc ON l.location_id = loc.id
         WHERE l.product_id = %s AND u.verified = 'true'
     """, (product_id,))
 
@@ -306,7 +305,7 @@ def check_product_exists(product_name: str, region: str = None, max_price: int =
     values = [product_id]
 
     if region:
-        filters.append("l.region = %s")
+        filters.append("COALESCE(loc.region, l.origin) = %s")
         values.append(region)
 
     if max_price:
@@ -319,6 +318,7 @@ def check_product_exists(product_name: str, region: str = None, max_price: int =
         SELECT COUNT(*)
         FROM listings l
         JOIN users u ON l.user_id = u.id
+        LEFT JOIN locations loc ON l.location_id = loc.id
         WHERE {where}
     """, values)
 
@@ -332,9 +332,10 @@ def check_product_exists(product_name: str, region: str = None, max_price: int =
 
     if region:
         cur.execute("""
-            SELECT DISTINCT l.region
+            SELECT DISTINCT COALESCE(loc.region, l.origin)
             FROM listings l
             JOIN users u ON l.user_id = u.id
+            LEFT JOIN locations loc ON l.location_id = loc.id
             WHERE l.product_id = %s AND u.verified = 'true'
         """, (product_id,))
         available_regions = [row[0] for row in cur.fetchall()]
@@ -385,6 +386,7 @@ def search_by_price(product_name: str, target_price: int, tolerance_percent: flo
         SELECT COUNT(*)
         FROM listings l
         JOIN users u ON l.user_id = u.id
+        LEFT JOIN locations loc ON l.location_id = loc.id
         WHERE l.product_id = %s AND u.verified = 'true'
     """, (product_id,))
 
@@ -398,11 +400,15 @@ def search_by_price(product_name: str, target_price: int, tolerance_percent: flo
         }
 
     cur.execute("""
-        SELECT l.*, p.name as product_name, u.name as seller_name,
+        SELECT l.id, l.user_id, l.product_id, l.quantity, l.measurement, l.price,
+               loc.town, loc.region, l.origin, l.image_url,
+               l.expires_at, l.created_at, l.updated_at,
+               p.name as product_name, u.name as seller_name,
                ABS(l.price - %s) as price_diff
         FROM listings l
         JOIN products p ON l.product_id = p.id
         JOIN users u ON l.user_id = u.id
+        LEFT JOIN locations loc ON l.location_id = loc.id
         WHERE l.product_id = %s
           AND u.verified = 'true'
           AND l.price BETWEEN %s AND %s
@@ -428,6 +434,7 @@ def search_by_price(product_name: str, target_price: int, tolerance_percent: flo
         SELECT l.price, COUNT(*) as count
         FROM listings l
         JOIN users u ON l.user_id = u.id
+        LEFT JOIN locations loc ON l.location_id = loc.id
         WHERE l.product_id = %s AND u.verified = 'true'
         GROUP BY l.price
         ORDER BY ABS(l.price - %s) ASC
