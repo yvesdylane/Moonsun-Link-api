@@ -1,6 +1,7 @@
 import os
 import json
-from groq import Groq
+import time
+from groq import Groq, RateLimitError
 from dotenv import load_dotenv
 from db.connect import conn
 
@@ -9,10 +10,74 @@ load_dotenv()
 
 class GroqIntentClassifier:
     def __init__(self):
-        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
         self.model = "llama-3.3-70b-versatile"
+        self.clients = self._load_all_clients()
+        self.current_key = 0
+        self.last_429 = {}
         self.product_whitelist_str = self._load_product_whitelist()
         self.location_whitelist_str = self._load_location_whitelist()
+
+    def _load_all_clients(self) -> list:
+        keys = []
+        groq_key = os.getenv("GROQ_API_KEY")
+        if groq_key:
+            keys.append(groq_key)
+        i = 1
+        while True:
+            key = os.getenv(f"GROQ_API_KEY_{i}")
+            if not key:
+                break
+            keys.append(key)
+            i += 1
+        if not keys:
+            print("WARNING: No GROQ_API_KEY found in environment")
+            return [Groq(api_key="")]
+        return [Groq(api_key=k) for k in keys]
+
+    def _call_groq(self, system_prompt, user_content, max_tokens=400):
+        for attempt in range(len(self.clients) * 2):
+            now = time.time()
+            available = [
+                i for i in range(len(self.clients))
+                if now - self.last_429.get(i, 0) > 60
+            ]
+            if not available:
+                min_wait = min(60 - (now - t) for t in self.last_429.values())
+                print(f"All Groq keys rate-limited, waiting {min_wait:.0f}s...")
+                time.sleep(min_wait + 1)
+                continue
+
+            idx = None
+            for i in range(len(self.clients)):
+                candidate = (self.current_key + 1 + i) % len(self.clients)
+                if candidate in available:
+                    idx = candidate
+                    break
+            if idx is None:
+                continue
+
+            self.current_key = idx
+            try:
+                return self.clients[idx].chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content}
+                    ],
+                    temperature=0.1,
+                    max_tokens=max_tokens,
+                    response_format={"type": "json_object"}
+                )
+            except RateLimitError:
+                self.last_429[idx] = time.time()
+                print(f"GROQ 429 on key #{idx}, switching to next key")
+                continue
+            except Exception as e:
+                print(f"GROQ ERROR on key #{idx}: {e}, switching to next key")
+                self.last_429[idx] = time.time()
+                continue
+
+        raise Exception("All Groq API keys are rate-limited. Service unavailable for now.")
 
     def _load_product_whitelist(self) -> str:
         """Build a formatted string of all approved products from the DB."""
@@ -170,16 +235,7 @@ EXAMPLES:
 """
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Classify this message: {text}"}
-                ],
-                temperature=0.1,
-                max_tokens=400,
-                response_format={"type": "json_object"}
-            )
+            response = self._call_groq(system_prompt, f"Classify this message: {text}", max_tokens=400)
 
             result = json.loads(response.choices[0].message.content)
 
@@ -315,15 +371,10 @@ Rules:
 """
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a context-aware assistant that resolves user references to listings."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                max_tokens=200,
-                response_format={"type": "json_object"}
+            response = self._call_groq(
+                "You are a context-aware assistant that resolves user references to listings.",
+                prompt,
+                max_tokens=200
             )
 
             result = json.loads(response.choices[0].message.content)
