@@ -46,6 +46,10 @@ class AssistantPipeline:
             "report_type": groq_entities.get("report_type"),
             "report_title": groq_entities.get("report_title"),
             "report_description": groq_entities.get("report_description"),
+            "issue_title": groq_entities.get("issue_title"),
+            "issue_description": groq_entities.get("issue_description"),
+            "issue_type": groq_entities.get("issue_type"),
+            "advice_content": groq_entities.get("advice_content"),
         }
 
         intent = {

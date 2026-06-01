@@ -155,7 +155,10 @@ Available intents:
 21. get_all_crop_prices - User wants price overview of all products
 22. report_issue - User reports a plant/animal disease OR a product shortage/lack in an area
 23. view_alerts - User wants to see active alerts/warnings
-24. unknown - None of the above match
+24. post_issue - Farmer posts a cultivation difficulty (wilting, pests, soil, weather, etc.)
+25. browse_issues - User wants to see open issues farmers are facing
+26. give_advice - User proposes advice/solution for a specific issue
+27. unknown - None of the above match
 
 PRODUCT WHITELIST — Only these products are accepted:
 {self.product_whitelist_str}
@@ -203,7 +206,11 @@ Extract entities:
 - location_auto_create: true/false — set to true if real CM town not in whitelist
 - report_type: disease/shortage/other — when intent is report_issue, classify the issue type
 - report_title: short title summarizing the report (e.g. "Cassava disease in Yaoundé")
-- report_description: full user description of the issue — keep the user's original wording
+- report_description: full user description of the report — keep the user's original wording
+- issue_title: short title summarizing the farmer's issue (for post_issue)
+- issue_description: full user description of the issue — keep the user's original wording
+- issue_type: disease/pest/soil/weather/technique/other — classify the type of farming difficulty
+- advice_content: the advice/solution text (for give_advice intent only)
 
 Respond ONLY with valid JSON in this exact format:
 {{
@@ -229,7 +236,11 @@ Respond ONLY with valid JSON in this exact format:
         "location_auto_create": false,
         "report_type": null,
         "report_title": null,
-        "report_description": null
+        "report_description": null,
+        "issue_title": null,
+        "issue_description": null,
+        "issue_type": null,
+        "advice_content": null
     }}
 }}
 
@@ -245,6 +256,14 @@ EXAMPLES:
 "my goat is sick" → intent:report_issue, report_type:"disease", report_title:"Goat disease", product:"goat"
 "show me alerts in littoral" → intent:view_alerts, entities all null
 "are there any active alerts" → intent:view_alerts
+"my cassava plants are wilting" → intent:post_issue, issue_title:"Cassava wilting", issue_type:"disease", product:"cassava"
+"my tomatoes are not growing well" → intent:post_issue, issue_title:"Tomato growth problem", issue_type:"technique", product:"tomato"
+"having trouble with pests on maize" → intent:post_issue, issue_title:"Maize pest infestation", issue_type:"pest", product:"maize"
+"my soil is too acidic" → intent:post_issue, issue_title:"Acidic soil", issue_type:"soil", product:null
+"show me open issues" → intent:browse_issues
+"list issues about cassava" → intent:browse_issues, product:"cassava"
+"for issue 3 try neem oil" → intent:give_advice, issue_title:null, advice_content:"Try neem oil for issue 3", listing_number:3
+"my advice for issue 2 is to use fertilizer" → intent:give_advice, advice_content:"Use fertilizer for issue 2", listing_number:2
 """
 
         try:
@@ -273,6 +292,10 @@ EXAMPLES:
             entities.setdefault("report_type", None)
             entities.setdefault("report_title", None)
             entities.setdefault("report_description", None)
+            entities.setdefault("issue_title", None)
+            entities.setdefault("issue_description", None)
+            entities.setdefault("issue_type", None)
+            entities.setdefault("advice_content", None)
 
             result["method"] = "groq"
 
@@ -296,6 +319,10 @@ EXAMPLES:
                     "report_type": None,
                     "report_title": None,
                     "report_description": None,
+                    "issue_title": None,
+                    "issue_description": None,
+                    "issue_type": None,
+                    "advice_content": None,
                 },
                 "error": str(e),
             }
@@ -327,6 +354,10 @@ EXAMPLES:
                     "report_type": None,
                     "report_title": None,
                     "report_description": None,
+                    "issue_title": None,
+                    "issue_description": None,
+                    "issue_type": None,
+                    "advice_content": None,
                 },
             }
 

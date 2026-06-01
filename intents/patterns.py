@@ -404,4 +404,68 @@ INTENT_PATTERNS = {
             "any warnings for farmers"
         ]
     },
+
+    "post_issue": {
+        "keywords": [
+            "my issue",
+            "problem with",
+            "difficulty",
+            "having trouble",
+            "my crop",
+            "not growing",
+            "wilting",
+            "dying",
+            "infestation",
+            "damage"
+        ],
+        "examples": [
+            "my cassava plants are wilting",
+            "my tomatoes are not growing well",
+            "having trouble with pests on maize",
+            "my goat is sick",
+            "soil problem in my farm",
+            "my crops are dying from drought",
+            "issue with my yam plantation",
+            "having difficulty with my poultry"
+        ]
+    },
+
+    "browse_issues": {
+        "keywords": [
+            "show issues",
+            "open issues",
+            "all issues",
+            "browse issues",
+            "list problems",
+            "what issues",
+            "any open issues"
+        ],
+        "examples": [
+            "show me open issues",
+            "browse farming issues",
+            "what problems are farmers facing",
+            "list open issues about cassava",
+            "show issues in Littoral",
+            "any issues with maize"
+        ]
+    },
+
+    "give_advice": {
+        "keywords": [
+            "advice for issue",
+            "try this",
+            "suggestion for",
+            "my advice",
+            "you should",
+            "recommend",
+            "solution for issue"
+        ],
+        "examples": [
+            "for issue 3, try watering less",
+            "my advice for issue 2 is to use fertilizer",
+            "suggestion for the cassava issue",
+            "I have advice for issue number 5",
+            "try neem oil for that pest issue"
+        ]
+    },
 }

@@ -164,6 +164,9 @@ class ToolRouter:
             "get_all_crop_prices": self._get_all_crop_prices,
             "report_issue": self._report_issue,
             "view_alerts": self._view_alerts,
+            "post_issue": self._post_issue,
+            "browse_issues": self._browse_issues,
+            "give_advice": self._give_advice,
         }
 
         handler = routes.get(intent, self._unknown)
@@ -1314,6 +1317,143 @@ class ToolRouter:
             lines.append("")
 
         return {"status": "ok", "message": "\n".join(lines).strip()}
+
+    def _post_issue(self, entities, user_id, image_url=None, text=""):
+        from db.controller.issueController import create_issue, search_advice
+        from db.controller.reportController import create_report
+
+        issue_type = entities.get("issue_type")
+        if not issue_type:
+            return {"status": "error", "message": "What issue are you facing? Describe your farming problem."}
+
+        title = entities.get("issue_title") or "Farming issue"
+        description = entities.get("issue_description") or text
+        product_name = entities.get("product")
+        location = entities.get("location")
+        region = entities.get("region")
+
+        result = create_issue(
+            user_id=user_id, title=title, description=description,
+            product_name=product_name, issue_type=issue_type,
+            location=location, region=region,
+        )
+        if result["status"] == "error":
+            return result
+
+        # If disease/pest issue, also create a report
+        if issue_type in ("disease", "pest"):
+            create_report(
+                user_id=user_id, report_type="disease",
+                title=title, description=description,
+                product_name=product_name, location=location, region=region,
+            )
+
+        msg = f"✅ Your issue has been logged (ID: #{result['issue_id']}).\n\n"
+        msg += f"📋 *{title.capitalize()}*\n"
+        msg += f"🔖 Type: {issue_type.capitalize()}\n"
+        if product_name:
+            msg += f"🌾 Product: {product_name.capitalize()}\n"
+        if location:
+            region_str = f", {region}" if region else ""
+            msg += f"📍 {location}{region_str}\n"
+
+        # Search for matching advice
+        matches = search_advice(product_name=product_name, issue_type=issue_type)
+        if matches:
+            msg += "\n🎯 *We found advice that may help:*\n"
+            for adv in matches:
+                adv_id, adv_title, adv_content, adv_product, adv_type, verified, upvotes, author = adv
+                check = "✅" if verified else "💡"
+                msg += f"\n{check} *{adv_title}* (by {author})\n"
+                msg += f"   {adv_content[:200]}"
+                if len(adv_content) > 200:
+                    msg += "..."
+                msg += "\n"
+        else:
+            msg += ("\n🤖 *AI-Generated Advice Available*\n"
+                    "   We don't have a verified solution for this yet, but we can "
+                    "provide AI-generated advice. Note: this advice is not verified "
+                    "and should be used with caution.\n"
+                    "   Reply: 'give me advice for issue {issue_id}' to get it.")
+
+        if issue_type in ("disease", "pest"):
+            msg += ("\n\n📢 This issue has also been sent as a report to our team "
+                    "since it may affect other farmers.")
+
+        return {"status": "ok", "message": msg}
+
+    def _browse_issues(self, entities, user_id, image_url=None, text=""):
+        from db.controller.issueController import get_issues
+
+        product_name = entities.get("product")
+        issue_type = entities.get("issue_type")
+        region = entities.get("region")
+
+        issues = get_issues(product_name=product_name, issue_type=issue_type, region=region)
+
+        if not issues:
+            return {"status": "ok", "message": "✅ No open issues matching your criteria."}
+
+        lines = ["🌱 *Open Farming Issues*\n"]
+        for issue in issues:
+            issue_id, title, desc, prod, itype, loc, reg, created, author = issue
+            icon = "🦠" if itype == "disease" else "🐛" if itype == "pest" else "🌍" if itype == "soil" else "🌤️" if itype == "weather" else "🔧" if itype == "technique" else "❓"
+            lines.append(f"#{issue_id} {icon} *{title}*")
+            if desc:
+                lines.append(f"   {desc[:150]}")
+            lines.append(f"   👤 {author} | 🔖 {itype.capitalize()}")
+            parts = []
+            if prod:
+                parts.append(f"🌾 {prod.capitalize()}")
+            if loc:
+                parts.append(f"📍 {loc}")
+                if reg:
+                    parts[-1] += f", {reg}"
+            if parts:
+                lines.append(f"   {' | '.join(parts)}")
+            lines.append(f"   💡 Reply: 'give advice for issue {issue_id}'")
+            lines.append("")
+
+        return {"status": "ok", "message": "\n".join(lines).strip()}
+
+    def _give_advice(self, entities, user_id, image_url=None, text=""):
+        from db.controller.issueController import create_advice, get_issue_by_id
+
+        advice_content = entities.get("advice_content")
+        if not advice_content:
+            return {"status": "error", "message": "What advice do you want to give?"}
+
+        # Extract issue number from the advice_content or listing_number entity
+        issue_number = entities.get("listing_number")
+        if not issue_number:
+            import re
+            match = re.search(r'issue\s*#?(\d+)', text, re.IGNORECASE)
+            if match:
+                issue_number = int(match.group(1))
+            else:
+                return {"status": "error", "message": "Which issue number is this advice for? Reply like: 'for issue 3, try neem oil'"}
+
+        issue = get_issue_by_id(issue_number)
+        if not issue:
+            return {"status": "error", "message": f"Issue #{issue_number} not found."}
+
+        title = f"Advice for issue #{issue_number}"
+        product_name = entities.get("product") or issue[4]
+        issue_type = entities.get("issue_type") or issue[5]
+
+        result = create_advice(
+            issue_id=issue_number, author_id=user_id, title=title,
+            content=advice_content, product_name=product_name,
+            issue_type=issue_type,
+        )
+
+        if result["status"] == "error":
+            return result
+
+        msg = f"✅ Your advice for issue #{issue_number} has been posted!\n\n"
+        msg += "Other farmers can now see and upvote it. Thank you for helping the community!"
+
+        return {"status": "ok", "message": msg}
 
     def _unknown(self, entities, user_id, image_url=None, text=""):
         return {"status": "error", "message": "I didn't understand that. Try asking to sell, find, or delete a listing."}
