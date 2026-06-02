@@ -26,16 +26,16 @@ class ToolRouter:
             conversation = fallback_ctx.get("conversation", [])
             conversation.append({"role": "user", "content": user_msg})
             conversation.append({"role": "assistant", "content": (bot_msg or "")[:500]})
-            if len(conversation) > 20:
-                conversation = conversation[-20:]
+            if len(conversation) > 10:
+                conversation = conversation[-10:]
             set_state(user_id, "active", {"conversation": conversation})
             return
         context = state.get("context", {})
         conversation = context.get("conversation", [])
         conversation.append({"role": "user", "content": user_msg})
         conversation.append({"role": "assistant", "content": (bot_msg or "")[:500]})
-        if len(conversation) > 20:
-            conversation = conversation[-20:]
+        if len(conversation) > 10:
+            conversation = conversation[-10:]
         context["conversation"] = conversation
         current_state = state["state"]
         set_state(user_id, current_state, context)
@@ -86,8 +86,8 @@ class ToolRouter:
                 "message": "Sorry, an error occurred on our side. Please try again later."
             }
 
-    def _check_new_intent(self, text: str):
-        pipeline_result = self.pipeline.process(text)
+    def _check_new_intent(self, text: str, conversation_history: list | None = None):
+        pipeline_result = self.pipeline.process(text, conversation_history)
         intent = pipeline_result["intent"]["intent"]
         confidence = pipeline_result["intent"]["confidence"]
         if intent not in ("unknown", "greeting") and confidence >= 0.5:
@@ -126,9 +126,10 @@ class ToolRouter:
 
     def _handle_inner(self, text: str, user_id: str, image_url: str = None) -> dict:
         state = get_state(user_id)
+        conversation_history = state.get("context", {}).get("conversation", None) if state else None
 
         if state:
-            new_pipeline = self._check_new_intent(text)
+            new_pipeline = self._check_new_intent(text, conversation_history)
 
             # ── collecting_fields (active flow) ──────────────────────
             if state["state"] == "collecting_fields":
@@ -181,20 +182,47 @@ class ToolRouter:
             if state["state"] == "browsing_listings":
                 lower = text.strip().lower()
                 if lower in ("next", "suivant"):
-                    result = self._browse_page(user_id, state["context"], direction=1)
+                    result = self._browse_page(user_id, state["context"], direction=1, state_name="browsing_listings")
                     result["language"] = state["context"].get("language", "en")
                     fresh = get_state(user_id)
                     self._save_conversation(user_id, text, result.get("message", ""), fresh)
                     return result
                 if lower in ("previous", "prev", "précédent", "retour"):
-                    result = self._browse_page(user_id, state["context"], direction=-1)
+                    result = self._browse_page(user_id, state["context"], direction=-1, state_name="browsing_listings")
                     result["language"] = state["context"].get("language", "en")
                     fresh = get_state(user_id)
                     self._save_conversation(user_id, text, result.get("message", ""), fresh)
                     return result
                 if new_pipeline:
                     intent = new_pipeline["intent"]["intent"]
-                    if intent in ("update_listing", "delete_listing", "show_interest", "view_listing_image"):
+                    if intent in ("update_listing", "delete_listing", "show_interest", "view_listing_image", "view_listing_details"):
+                        pass
+                    else:
+                        clear_state(user_id)
+                elif not new_pipeline:
+                    return {
+                        "status": "error",
+                        "message": "Reply 'next' or 'previous' to browse pages, or send a new request."
+                    }
+
+            # ── viewing_my_listings ──────────────────────────────────────
+            if state["state"] == "viewing_my_listings":
+                lower = text.strip().lower()
+                if lower in ("next", "suivant"):
+                    result = self._browse_page(user_id, state["context"], direction=1, state_name="viewing_my_listings")
+                    result["language"] = state["context"].get("language", "en")
+                    fresh = get_state(user_id)
+                    self._save_conversation(user_id, text, result.get("message", ""), fresh)
+                    return result
+                if lower in ("previous", "prev", "précédent", "retour"):
+                    result = self._browse_page(user_id, state["context"], direction=-1, state_name="viewing_my_listings")
+                    result["language"] = state["context"].get("language", "en")
+                    fresh = get_state(user_id)
+                    self._save_conversation(user_id, text, result.get("message", ""), fresh)
+                    return result
+                if new_pipeline:
+                    intent = new_pipeline["intent"]["intent"]
+                    if intent in ("update_listing", "delete_listing"):
                         pass
                     else:
                         clear_state(user_id)
@@ -236,7 +264,7 @@ class ToolRouter:
                         "message": "🆔 Please send a photo of your ID card.\n\nJust send the image directly.\n\nAccepted formats: JPEG, PNG, PDF (max 2MB)"
                     }
 
-        pipeline_result = self.pipeline.process(text)
+        pipeline_result = self.pipeline.process(text, conversation_history)
         intent = pipeline_result["intent"]["intent"]
         entities = pipeline_result["entities"]
         language = pipeline_result["language"]
@@ -510,7 +538,7 @@ class ToolRouter:
                     else:
                         serializable_listing.append(x)
                 listings_details.append(serializable_listing)
-        set_state(user_id, "browsing_listings", {
+        set_state(user_id, "viewing_my_listings", {
             "listing_ids": listing_ids,
             "listings_details": listings_details,
             "filters": filters,
@@ -519,7 +547,7 @@ class ToolRouter:
         })
         return {"status": "ok", "data": result, "show_seller": False}
 
-    def _browse_page(self, user_id: str, context: dict, direction: int) -> dict:
+    def _browse_page(self, user_id: str, context: dict, direction: int, state_name: str = "browsing_listings") -> dict:
         page = context["page"] + direction
 
         if page < 1:
@@ -532,10 +560,24 @@ class ToolRouter:
             return {"status": "error", "message": f"No more pages. Total pages: {result['total_pages']}"}
 
         context["page"] = page
-        set_state(user_id, "browsing_listings", context)
+        set_state(user_id, state_name, context)
         return {"status": "ok", "data": result}
 
     def _delete_listing(self, entities, user_id, image_url=None, text=""):
+        listing_number = entities.get("listing_number")
+
+        if listing_number:
+            state = get_state(user_id)
+            if state and state["state"] == "viewing_my_listings" and "listing_ids" in state.get("context", {}):
+                listing_ids = state["context"]["listing_ids"]
+                try:
+                    listing_index = int(listing_number) - 1
+                    if 0 <= listing_index < len(listing_ids):
+                        clear_state(user_id)
+                        return delete_listing(listing_id=listing_ids[listing_index], user_id=user_id)
+                except (ValueError, TypeError):
+                    pass
+
         if not entities.get("product"):
             return {"status": "error", "message": "Which product listing do you want to delete?"}
 
@@ -573,7 +615,7 @@ class ToolRouter:
     def _update_listing(self, entities, user_id, image_url=None, text=""):
         state = get_state(user_id)
 
-        if state and "listings_details" in state.get("context", {}):
+        if state and state["state"] == "viewing_my_listings" and "listings_details" in state.get("context", {}):
             listings_details = state["context"]["listings_details"]
 
             from intents.groq_classifier import GroqIntentClassifier
@@ -934,7 +976,7 @@ class ToolRouter:
 
         state = get_state(user_id)
 
-        if not state or "listing_ids" not in state.get("context", {}):
+        if not state or state["state"] != "browsing_listings" or "listing_ids" not in state.get("context", {}):
             return {
                 "status": "error",
                 "message": "Please search for listings first.\n\nExample: 'Find corn in Douala'"
@@ -1077,7 +1119,7 @@ class ToolRouter:
                 )
 
             listing_ids = [listing['id'] for listing in result["listings"]]
-            set_state(user_id, "viewing_listings", {
+            set_state(user_id, "browsing_listings", {
                 "listing_ids": listing_ids,
                 "page": 1,
                 "show_seller": True,
@@ -1122,7 +1164,7 @@ class ToolRouter:
         from db.connect import conn
 
         state = get_state(user_id)
-        if not state or "listing_ids" not in state.get("context", {}):
+        if not state or state["state"] != "browsing_listings" or "listing_ids" not in state.get("context", {}):
             return {
                 "status": "error",
                 "message": "Please search for listings first.\n\nExample: 'Find corn in Douala'"
@@ -1183,7 +1225,7 @@ class ToolRouter:
         from db.controller.listingController import get_listing_details
 
         state = get_state(user_id)
-        if not state or "listing_ids" not in state.get("context", {}):
+        if not state or state["state"] != "browsing_listings" or "listing_ids" not in state.get("context", {}):
             return {
                 "status": "error",
                 "message": "Please search for listings first.\n\nExample: 'Find corn in Douala'"

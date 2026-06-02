@@ -135,13 +135,28 @@ class GroqIntentClassifier:
             print(f"Error loading me.md: {e}")
             return "# Moonso Link\nAgricultural marketplace assistant for Cameroon."
 
-    def classify(self, text: str) -> dict:
+    def classify(self, text: str, conversation_history: list | None = None) -> dict:
         """
         Use Groq to classify user intent and extract entities.
+
+        Args:
+            text: The user message to classify
+            conversation_history: Optional list of {"role": ..., "content": ...} dicts for context
 
         Returns:
             dict with keys: intent, confidence, entities
         """
+
+        history_context = ""
+        if conversation_history:
+            history_lines = []
+            for turn in conversation_history[-4:]:
+                history_lines.append(f"{turn['role']}: {turn['content']}")
+            history_context = (
+                "Relevant conversation history (use this to resolve pronouns, ordinals, and ambiguous references):\n"
+                + "\n".join(history_lines)
+                + "\n\n"
+            )
 
         system_prompt = f"""You are an intent classifier for Moonso Link, an agricultural marketplace platform.
 
@@ -295,7 +310,14 @@ EXAMPLES:
 "tell me more about listing #2" → intent:view_listing_details, listing_number:2
 "what's special about listing #5" → intent:view_listing_details, listing_number:5
 "show details of listing 1" → intent:view_listing_details, listing_number:1
-"""
+"more detail for the second one" → intent:view_listing_details, listing_number:2
+"tell me more about the second listing" → intent:view_listing_details, listing_number:2
+"I'm interested in listing #2" → intent:show_interest, listing_number:2
+"I want the third one" → intent:show_interest, listing_number:3
+"interested in the second listing" → intent:show_interest, listing_number:2
+"I'm interested in the first one" → intent:show_interest, listing_number:1
+
+{history_context}"""
 
         try:
             response = self._call_groq(system_prompt, f"Classify this message: {text}", max_tokens=400)
@@ -360,8 +382,8 @@ EXAMPLES:
                 "error": str(e),
             }
 
-    def classify_with_fallback(self, text: str) -> dict:
-        result = self.classify(text)
+    def classify_with_fallback(self, text: str, conversation_history: list | None = None) -> dict:
+        result = self.classify(text, conversation_history)
 
         if result["intent"] == "unknown" or result.get("confidence", 0) < 0.3:
             from intents.classifier import IntentClassifier

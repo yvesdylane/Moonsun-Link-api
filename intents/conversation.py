@@ -80,7 +80,7 @@ class ConversationEngine:
 
     def respond(self, conversation: list, active_flow: dict | None, user_message: str) -> dict:
         history_lines = []
-        for turn in conversation[-6:]:
+        for turn in conversation[-10:]:
             role = turn["role"]
             content = turn["content"]
             history_lines.append(f"{role}: {content}")

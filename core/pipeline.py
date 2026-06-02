@@ -9,11 +9,11 @@ class AssistantPipeline:
         self.classifier = GroqIntentClassifier()
         self.extractor = EntityExtractor()
 
-    def process(self, text: str) -> dict:
+    def process(self, text: str, conversation_history: list | None = None) -> dict:
         translated_text, detected_lang = translate_to_english(text)
 
         # Use Groq for intent classification and entity extraction
-        groq_result = self.classifier.classify_with_fallback(translated_text)
+        groq_result = self.classifier.classify_with_fallback(translated_text, conversation_history)
 
         # Extract entities from Groq response
         groq_entities = groq_result.get("entities", {})
