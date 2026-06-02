@@ -171,7 +171,8 @@ Available intents:
 24. post_issue - Farmer posts a cultivation difficulty (wilting, pests, soil, weather, etc.)
 25. browse_issues - User wants to see open issues farmers are facing
 26. give_advice - User proposes advice/solution for a specific issue
-27. unknown - None of the above match
+27. view_listing_details - User wants to see full details of a specific listing (description, photo, farmer info)
+28. unknown - None of the above match
 
 PRODUCT WHITELIST — Only these products are accepted:
 {self.product_whitelist_str}
@@ -224,6 +225,7 @@ Extract entities:
 - issue_description: full user description of the issue — keep the user's original wording
 - issue_type: disease/pest/soil/weather/technique/other — classify the type of farming difficulty
 - advice_content: the advice/solution text (for give_advice intent only)
+- description: short clean summary of the product when user creates a listing (e.g. "50kg of fresh organic corn harvested yesterday" → "Fresh organic corn, freshly harvested"); only extract when intent is create_listing; summarize concisely
 
 Respond ONLY with valid JSON in this exact format:
 {{
@@ -253,7 +255,8 @@ Respond ONLY with valid JSON in this exact format:
         "issue_title": null,
         "issue_description": null,
         "issue_type": null,
-        "advice_content": null
+        "advice_content": null,
+        "description": null
     }}
 }}
 
@@ -263,6 +266,7 @@ EXAMPLES:
 "tell me about yourself" → intent:about_bot
 "what are you" → intent:about_bot
 "what can you do" → intent:about_bot
+"I want to sell 50kg of fresh organic mangoes at 300 XAF" → intent:create_listing, description:"Fresh organic mangoes", product:"mangoes", auto_create:true, product_type:"crop"
 "I want to sell 50kg of mangoes at 300 XAF" → product not in whitelist but IS agriculture (fruit) → auto_create:true, product_type:"crop"
 "I want to sell my dresses" → not agriculture → product:null, valid:false, rejection_reason:"Dresses are not an agricultural product. We only support agriculture-related products such as crops, livestock, farming tools, and agricultural services."
 "I want to sell a bag of rice" → "rice" is in whitelist → product:"rice", auto_create:false
@@ -282,6 +286,10 @@ EXAMPLES:
 "list issues about cassava" → intent:browse_issues, product:"cassava"
 "for issue 3 try neem oil" → intent:give_advice, issue_title:null, advice_content:"Try neem oil for issue 3", listing_number:3
 "my advice for issue 2 is to use fertilizer" → intent:give_advice, advice_content:"Use fertilizer for issue 2", listing_number:2
+"show me details of listing #3" → intent:view_listing_details, listing_number:3
+"tell me more about listing #2" → intent:view_listing_details, listing_number:2
+"what's special about listing #5" → intent:view_listing_details, listing_number:5
+"show details of listing 1" → intent:view_listing_details, listing_number:1
 """
 
         try:
@@ -314,6 +322,7 @@ EXAMPLES:
             entities.setdefault("issue_description", None)
             entities.setdefault("issue_type", None)
             entities.setdefault("advice_content", None)
+            entities.setdefault("description", None)
 
             result["method"] = "groq"
 
@@ -341,6 +350,7 @@ EXAMPLES:
                     "issue_description": None,
                     "issue_type": None,
                     "advice_content": None,
+                    "description": None,
                 },
                 "error": str(e),
             }
@@ -376,6 +386,7 @@ EXAMPLES:
                     "issue_description": None,
                     "issue_type": None,
                     "advice_content": None,
+                    "description": None,
                 },
             }
 

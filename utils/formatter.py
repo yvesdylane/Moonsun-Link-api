@@ -79,6 +79,8 @@ def format_listings(result: dict, show_seller: bool = False, market_avg: float =
     if has_images:
         lines.append(f"\n📸 To see photos, send: 'show image of listing #[number]'")
 
+    lines.append(f"\n📋 For full details (description, farmer info, photo), send: 'show details of listing #[number]'")
+
     return "\n\n".join(lines)
 
 

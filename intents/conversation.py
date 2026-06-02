@@ -128,7 +128,7 @@ Respond with a JSON object and nothing else — no text before or after the JSON
     "extracted": {{}}
 }}
 
-If the user provided task fields (price, quantity, location, product, etc.), put them in "extracted".
+If the user provided task fields (price, quantity, location, product, measurement, description, etc.), put them in "extracted".
 If the task is done, set "completed": true.
 Do NOT ask for fields that were already collected.
 """

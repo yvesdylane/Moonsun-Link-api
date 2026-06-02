@@ -269,6 +269,7 @@ class ToolRouter:
             "post_issue": self._post_issue,
             "browse_issues": self._browse_issues,
             "give_advice": self._give_advice,
+            "view_listing_details": self._view_listing_details,
         }
 
         handler = routes.get(intent, self._unknown)
@@ -387,6 +388,7 @@ class ToolRouter:
             region=entities.get("region"),
             origin=entities.get("region"),
             image_url=compressed_image_url,
+            description=entities.get("description"),
         )
 
         if result["status"] == "error":
@@ -420,7 +422,7 @@ class ToolRouter:
         return {"status": "ok", "message": message}
 
     def _search_listings(self, entities, user_id, image_url=None, text=""):
-        from db.controller.listingController import check_product_exists
+        from db.controller.listingController import get_listings as _get_listings
         from db.controller.productPriceController import get_market_price_for_listing_search
         from utils.formatter import format_market_price_header
 
@@ -473,34 +475,15 @@ class ToolRouter:
             })
 
         if result["total"] == 0 and entities.get("product"):
-            check_result = check_product_exists(
-                product_name=entities.get("product"),
-                region=entities.get("region"),
-                max_price=entities.get("price"),
+            # Check if the product exists in any listing at all
+            any_result = _get_listings(
+                product_name=entities.get("product"), limit=1
             )
-
-            if not check_result["exists"]:
-                if check_result["reason"] == "not_listed":
-                    return {
-                        "status": "ok",
-                        "message": f"❌ No one is currently selling {entities.get('product')}.\n\nTo see available products, send: 'What products are available?'"
-                    }
-
-            elif not check_result.get("matches_criteria", True):
-                feedback_parts = [f"⚠️ {entities.get('product').capitalize()} is listed but doesn't match your criteria:"]
-
-                if "available_regions" in check_result:
-                    regions_str = ", ".join(check_result["available_regions"])
-                    feedback_parts.append(f"\n📍 You searched in: {check_result['searched_region']}")
-                    feedback_parts.append(f"✅ Available in: {regions_str}")
-
-                if "min_price" in check_result:
-                    feedback_parts.append(f"\n💰 Your max price: {check_result['max_price_searched']} XAF")
-                    feedback_parts.append(f"✅ Lowest price: {check_result['min_price']} XAF")
-
-                feedback_parts.append(f"\n\nTo see all {entities.get('product')} listings, send: 'Find {entities.get('product')}'")
-
-                return {"status": "ok", "message": "".join(feedback_parts)}
+            if any_result["total"] == 0:
+                return {
+                    "status": "ok",
+                    "message": f"❌ No one is currently selling {entities.get('product')}.\n\nTo see available products, send: 'What products are available?'"
+                }
 
         return_data = {"status": "ok", "data": result, "show_seller": True}
         if market_price_header:
@@ -1196,6 +1179,67 @@ class ToolRouter:
             "status": "ok",
             "message": f"📸 #{listing_number} {product_name}",
             "preview_image": image,
+        }
+
+    def _view_listing_details(self, entities, user_id, image_url=None, text=""):
+        from db.controller.listingController import get_listing_details
+
+        state = get_state(user_id)
+        if not state or "listing_ids" not in state.get("context", {}):
+            return {
+                "status": "error",
+                "message": "Please search for listings first.\n\nExample: 'Find corn in Douala'"
+            }
+
+        listing_ids = state["context"]["listing_ids"]
+        listing_number = entities.get("listing_number")
+
+        if not listing_number:
+            return {
+                "status": "error",
+                "message": "Which listing would you like details for?\n\nExample: 'show details of listing #2'"
+            }
+
+        try:
+            listing_index = int(listing_number) - 1
+            if listing_index < 0 or listing_index >= len(listing_ids):
+                return {
+                    "status": "error",
+                    "message": f"Invalid listing number. Please choose between 1 and {len(listing_ids)}."
+                }
+        except (ValueError, TypeError):
+            return {
+                "status": "error",
+                "message": "Please provide a valid listing number.\n\nExample: 'show details of listing #2'"
+            }
+
+        listing_id = listing_ids[listing_index]
+        details = get_listing_details(listing_id, user_id)
+
+        if details["status"] == "error":
+            return details
+
+        d = details["listing"]
+        msg = f"📋 *#{listing_number} {d['product_name'].capitalize()}*\n\n"
+        msg += f"👤 Farmer: {d['seller_name']}\n"
+        msg += f"📞 Phone: {d['seller_phone'] or 'Not shared'}\n"
+        msg += f"📦 {d['quantity']}{d['measurement']} at {d['price']} XAF/{d['measurement']}\n"
+
+        if d.get("town"):
+            if d["region"] == "General":
+                msg += f"📍 {d['town']} (Available nationwide)\n"
+            else:
+                msg += f"📍 {d['town']}, {d['region']}\n"
+        elif d.get("region"):
+            msg += f"📍 {d['region']}\n"
+
+        if d.get("description"):
+            msg += f"\n📝 *Description:* {d['description']}\n"
+
+        return {
+            "status": "ok",
+            "message": msg.strip(),
+            "preview_image": d.get("image_url"),
         }
 
     def _get_my_interests(self, entities, user_id, image_url=None, text=""):

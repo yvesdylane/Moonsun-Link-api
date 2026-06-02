@@ -51,7 +51,8 @@ def _get_or_create_location_id(town: str, region: str = None) -> int | None:
 
 
 def create_listing(user_id, product_name, quantity, price, measurement=None,
-                   town=None, region=None, origin=None, image_url=None):
+                   town=None, region=None, origin=None, image_url=None,
+                   description=None):
     """
     Create a new listing.
 
@@ -92,11 +93,11 @@ def create_listing(user_id, product_name, quantity, price, measurement=None,
 
     cur = conn.cursor()
     query = f"""
-        INSERT INTO listings (user_id, product_id, quantity, measurement, price, location_id, origin, image_url, expires_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, {expires_at})
+        INSERT INTO listings (user_id, product_id, quantity, measurement, price, location_id, origin, image_url, description, expires_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, {expires_at})
         RETURNING id
     """
-    cur.execute(query, (user_id, product_id, quantity, measurement, price, location_id, origin, image_url))
+    cur.execute(query, (user_id, product_id, quantity, measurement, price, location_id, origin, image_url, description))
     listing_id = cur.fetchone()[0]
     conn.commit()
     cur.close()
@@ -110,6 +111,7 @@ def create_listing(user_id, product_name, quantity, price, measurement=None,
         "quantity": quantity,
         "measurement": measurement,
         "price": price,
+        "description": description,
     }
 
 
@@ -224,7 +226,8 @@ def get_listings(page=1, limit=10, product_name=None, town=None, region=None,
         SELECT l.id, l.user_id, l.product_id, l.quantity, l.measurement, l.price,
                loc.town, loc.region, l.origin, l.image_url,
                l.expires_at, l.created_at, l.updated_at,
-               p.name as product_name, u.name as seller_name
+               p.name as product_name, u.name as seller_name,
+               l.description
         FROM listings l
         JOIN products p ON l.product_id = p.id
         JOIN users u ON l.user_id = u.id
@@ -404,6 +407,7 @@ def search_by_price(product_name: str, target_price: int, tolerance_percent: flo
                loc.town, loc.region, l.origin, l.image_url,
                l.expires_at, l.created_at, l.updated_at,
                p.name as product_name, u.name as seller_name,
+               l.description,
                ABS(l.price - %s) as price_diff
         FROM listings l
         JOIN products p ON l.product_id = p.id
@@ -449,4 +453,72 @@ def search_by_price(product_name: str, target_price: int, tolerance_percent: flo
         "target_price": target_price,
         "nearest_prices": [{"price": row[0], "count": row[1]} for row in nearest_prices],
         "message": f"No listings at {target_price} XAF, but here are the nearest prices",
+    }
+
+
+def get_listing_details(listing_id: int, user_id: str = None) -> dict:
+    """
+    Get full details for a single listing, including description, farmer info, and image.
+
+    Args:
+        listing_id: The listing ID
+        user_id: If provided, owned listings are visible to owner
+
+    Returns:
+        dict with listing details or error
+    """
+    cur = conn.cursor()
+
+    if user_id:
+        cur.execute("""
+            SELECT l.id, l.quantity, l.measurement, l.price,
+                   loc.town, loc.region, l.origin, l.image_url,
+                   l.description, l.created_at, l.expires_at,
+                   p.name as product_name, u.name as seller_name,
+                   u.phone as seller_phone, l.user_id
+            FROM listings l
+            JOIN products p ON l.product_id = p.id
+            JOIN users u ON l.user_id = u.id
+            LEFT JOIN locations loc ON l.location_id = loc.id
+            WHERE l.id = %s AND (u.verified = 'true' OR l.user_id = %s)
+        """, (listing_id, user_id))
+    else:
+        cur.execute("""
+            SELECT l.id, l.quantity, l.measurement, l.price,
+                   loc.town, loc.region, l.origin, l.image_url,
+                   l.description, l.created_at, l.expires_at,
+                   p.name as product_name, u.name as seller_name,
+                   u.phone as seller_phone, l.user_id
+            FROM listings l
+            JOIN products p ON l.product_id = p.id
+            JOIN users u ON l.user_id = u.id
+            LEFT JOIN locations loc ON l.location_id = loc.id
+            WHERE l.id = %s AND u.verified = 'true'
+        """, (listing_id,))
+
+    row = cur.fetchone()
+    cur.close()
+
+    if not row:
+        return {"status": "error", "message": "Listing not found"}
+
+    return {
+        "status": "ok",
+        "listing": {
+            "id": row[0],
+            "quantity": row[1],
+            "measurement": row[2] or "kg",
+            "price": row[3],
+            "town": row[4],
+            "region": row[5],
+            "origin": row[6],
+            "image_url": row[7],
+            "description": row[8],
+            "created_at": row[9],
+            "expires_at": row[10],
+            "product_name": row[11],
+            "seller_name": row[12],
+            "seller_phone": row[13],
+            "seller_id": row[14],
+        }
     }
