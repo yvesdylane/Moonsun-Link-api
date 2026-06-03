@@ -206,8 +206,8 @@ def verify_linking_code(phone: str, entered_code: str) -> dict:
     cur.execute("""
         SELECT id, name, linking_code, code_expire_at, created_at, user_id
         FROM users
-        WHERE whatsapp_number = %s
-    """, (phone,))
+        WHERE whatsapp_number = %s OR telegram_number = %s OR phone = %s
+    """, (phone, phone, phone))
     row = cur.fetchone()
     cur.close()
 

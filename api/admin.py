@@ -50,8 +50,8 @@ class UpdateIssueRequest(BaseModel):
 def admin_login(body: LoginRequest):
     try:
         phone = body.phone.strip()
-        if not phone.startswith("+"):
-            phone = "+" + phone
+        if not phone.startswith("+237"):
+            phone = "+237" + phone
 
         user = get_user_by_phone(phone)
         if not user:
@@ -83,8 +83,8 @@ def admin_login(body: LoginRequest):
 def admin_verify(body: VerifyRequest):
     try:
         phone = body.phone.strip()
-        if not phone.startswith("+"):
-            phone = "+" + phone
+        if not phone.startswith("+237"):
+            phone = "+237" + phone
 
         result = verify_linking_code(phone, body.code.strip())
         if result["status"] == "error":
