@@ -12,7 +12,8 @@ def log_message_exchange(user_id: str, incoming: str, outgoing: str, intent: str
 
 
 def get_message_logs(platform: str = None, intent: str = None,
-                     user_id: str = None) -> list[dict]:
+                     user_id: str = None,
+                     page: int = 1, limit: int = 20) -> dict:
     cur = conn.cursor(row_factory=dict_row)
     try:
         conditions = []
@@ -26,15 +27,36 @@ def get_message_logs(platform: str = None, intent: str = None,
         if user_id:
             conditions.append("user_id = %s")
             values.append(user_id)
+
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        cur.execute(f"""
+            SELECT COUNT(*) AS cnt FROM message_logs ml
+            LEFT JOIN users u ON ml.user_id = u.id
+            {where}
+        """, values)
+        total = cur.fetchone()["cnt"]
+
+        offset = (page - 1) * limit
+        total_pages = max(1, -(-total // limit)) if total else 1
+
         cur.execute(f"""
             SELECT ml.*, u.name AS user_name, u.phone AS user_phone
             FROM message_logs ml
             LEFT JOIN users u ON ml.user_id = u.id
             {where}
             ORDER BY ml.created_at DESC
-        """, values)
-        return cur.fetchall()
+            LIMIT %s OFFSET %s
+        """, values + [limit, offset])
+        logs = cur.fetchall()
+
+        return {
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": total_pages,
+            "logs": logs,
+        }
     finally:
         cur.close()
 

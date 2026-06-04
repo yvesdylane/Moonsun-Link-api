@@ -29,25 +29,41 @@ def set_state(user_id: str, state: str, context: dict = {}):
     conn.commit()
     cur.close()
 
-def get_all_conversation_states(state: str = None) -> list[dict]:
+def get_all_conversation_states(state: str = None,
+                                page: int = 1, limit: int = 20) -> dict:
     cur = conn.cursor(row_factory=dict_row)
     try:
-        if state:
-            cur.execute("""
-                SELECT cs.*, u.name AS user_name, u.phone AS user_phone
-                FROM conversation_state cs
-                JOIN users u ON cs.user_id = u.id
-                WHERE cs.state = %s
-                ORDER BY cs.updated_at DESC
-            """, (state,))
-        else:
-            cur.execute("""
-                SELECT cs.*, u.name AS user_name, u.phone AS user_phone
-                FROM conversation_state cs
-                JOIN users u ON cs.user_id = u.id
-                ORDER BY cs.updated_at DESC
-            """)
-        return cur.fetchall()
+        cond = "WHERE cs.state = %s" if state else ""
+        params = [state] if state else []
+
+        cur.execute(f"""
+            SELECT COUNT(*) AS cnt
+            FROM conversation_state cs
+            JOIN users u ON cs.user_id = u.id
+            {cond}
+        """, params)
+        total = cur.fetchone()["cnt"]
+
+        offset = (page - 1) * limit
+        total_pages = max(1, -(-total // limit)) if total else 1
+
+        cur.execute(f"""
+            SELECT cs.*, u.name AS user_name, u.phone AS user_phone
+            FROM conversation_state cs
+            JOIN users u ON cs.user_id = u.id
+            {cond}
+            ORDER BY cs.updated_at DESC
+            LIMIT %s OFFSET %s
+        """, params + [limit, offset])
+        states = cur.fetchall()
+
+        return {
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": total_pages,
+            "states": states,
+        }
     finally:
         cur.close()
 

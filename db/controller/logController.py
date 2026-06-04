@@ -19,7 +19,8 @@ def log_message(input_text: str, intent: dict, entities: dict):
     cur.close()
 
 
-def get_assistant_logs(intent: str = None, method: str = None) -> list[dict]:
+def get_assistant_logs(intent: str = None, method: str = None,
+                       page: int = 1, limit: int = 20) -> dict:
     cur = conn.cursor(row_factory=dict_row)
     try:
         conditions = []
@@ -30,11 +31,29 @@ def get_assistant_logs(intent: str = None, method: str = None) -> list[dict]:
         if method:
             conditions.append("method = %s")
             values.append(method)
+
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        cur.execute(f"SELECT COUNT(*) AS cnt FROM assistant_logs {where}", values)
+        total = cur.fetchone()["cnt"]
+
+        offset = (page - 1) * limit
+        total_pages = max(1, -(-total // limit)) if total else 1
+
         cur.execute(f"""
-            SELECT * FROM assistant_logs {where} ORDER BY timestamp DESC
-        """, values)
-        return cur.fetchall()
+            SELECT * FROM assistant_logs {where}
+            ORDER BY timestamp DESC
+            LIMIT %s OFFSET %s
+        """, values + [limit, offset])
+        logs = cur.fetchall()
+
+        return {
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": total_pages,
+            "logs": logs,
+        }
     finally:
         cur.close()
 

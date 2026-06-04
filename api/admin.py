@@ -1103,11 +1103,13 @@ def admin_list_message_logs(
     platform: Optional[str] = Query(None),
     intent: Optional[str] = Query(None),
     user_id: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     _auth=Depends(get_current_admin),
 ):
     try:
-        logs = _get_message_logs(platform=platform, intent=intent, user_id=user_id)
-        return {"status": "ok", "data": logs}
+        result = _get_message_logs(platform=platform, intent=intent, user_id=user_id, page=page, limit=limit)
+        return {"status": "ok", "data": result}
     except Exception as e:
         print(f"ADMIN LIST MESSAGE LOGS ERROR: {e}")
         traceback.print_exc()
@@ -1133,11 +1135,13 @@ def admin_get_message_log(log_id: int, _auth=Depends(get_current_admin)):
 def admin_list_assistant_logs(
     intent: Optional[str] = Query(None),
     method: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     _auth=Depends(get_current_admin),
 ):
     try:
-        logs = _get_assistant_logs(intent=intent, method=method)
-        return {"status": "ok", "data": logs}
+        result = _get_assistant_logs(intent=intent, method=method, page=page, limit=limit)
+        return {"status": "ok", "data": result}
     except Exception as e:
         print(f"ADMIN LIST ASSISTANT LOGS ERROR: {e}")
         traceback.print_exc()
@@ -1162,11 +1166,15 @@ def admin_get_assistant_log(log_id: int, _auth=Depends(get_current_admin)):
 @router.get("/logs/states")
 def admin_list_conversation_states(
     state: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     _auth=Depends(get_current_admin),
 ):
     try:
-        states = _get_all_conversation_states(state=state)
-        return {"status": "ok", "data": states}
+        result = _get_all_conversation_states(state=state, page=page, limit=limit)
+        return {"status": "ok", "data": result}
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"ADMIN LIST CONVERSATION STATES ERROR: {e}")
         traceback.print_exc()
