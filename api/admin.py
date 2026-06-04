@@ -18,6 +18,13 @@ from db.controller.reportController import get_reports
 from db.controller.issueController import get_issues
 from db.controller.alertController import create_alert as _create_alert, get_all_user_contacts, get_alerts as _get_alerts
 from db.controller.listingInterestController import get_all_interests as _get_all_interests
+from db.controller.locationController import (
+    create_location as _create_location,
+    get_location as _get_location,
+    get_all_locations as _get_all_locations,
+    update_location as _update_location,
+    delete_location as _delete_location,
+)
 from db.controller.adviceController import (
     create_advice as _create_advice,
     get_advice as _get_advice,
@@ -120,6 +127,18 @@ class UpdateProductPriceRequest(BaseModel):
     min_price: Optional[int] = None
     max_price: Optional[int] = None
     avg_price: Optional[int] = None
+
+
+class CreateLocationRequest(BaseModel):
+    town: str
+    region: str
+    department: Optional[str] = None
+
+
+class UpdateLocationRequest(BaseModel):
+    town: Optional[str] = None
+    region: Optional[str] = None
+    department: Optional[str] = None
 
 
 # ── Auth ────────────────────────────────────────────────────────────────
@@ -949,6 +968,117 @@ def admin_delete_product_price(price_id: int, _auth=Depends(get_current_admin)):
         raise
     except Exception as e:
         print(f"ADMIN DELETE PRODUCT PRICE ERROR: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# ── Locations ───────────────────────────────────────────────────────────
+
+VALID_LOCATION_REGIONS = (
+    "Adamaoua", "Centre", "Est", "Extreme-Nord", "Littoral",
+    "Nord", "Nord-Ouest", "Ouest", "Sud", "Sud-Ouest", "General",
+)
+
+
+@router.post("/locations")
+def admin_create_location(body: CreateLocationRequest, _auth=Depends(get_current_admin)):
+    try:
+        if body.region not in VALID_LOCATION_REGIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid region. Must be one of: {', '.join(VALID_LOCATION_REGIONS)}"
+            )
+        result = _create_location(body.town.strip(), body.region, body.department)
+        if result["status"] == "error":
+            raise HTTPException(status_code=400, detail=result["message"])
+        return {"status": "ok", "data": result["location"]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ADMIN CREATE LOCATION ERROR: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/locations")
+def admin_list_locations(
+    town: Optional[str] = Query(None),
+    region: Optional[str] = Query(None),
+    _auth=Depends(get_current_admin),
+):
+    try:
+        if region and region not in VALID_LOCATION_REGIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid region. Must be one of: {', '.join(VALID_LOCATION_REGIONS)}"
+            )
+        locations = _get_all_locations(town=town, region=region)
+        return {"status": "ok", "data": locations}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ADMIN LIST LOCATIONS ERROR: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/locations/{location_id}")
+def admin_get_location(location_id: int, _auth=Depends(get_current_admin)):
+    try:
+        location = _get_location(location_id)
+        if not location:
+            raise HTTPException(status_code=404, detail="Location not found")
+        return {"status": "ok", "data": location}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ADMIN GET LOCATION ERROR: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.patch("/locations/{location_id}")
+def admin_update_location(location_id: int, body: UpdateLocationRequest, _auth=Depends(get_current_admin)):
+    try:
+        updates = {}
+        if body.town is not None:
+            updates["town"] = body.town.strip()
+        if body.region is not None:
+            if body.region not in VALID_LOCATION_REGIONS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid region. Must be one of: {', '.join(VALID_LOCATION_REGIONS)}"
+                )
+            updates["region"] = body.region
+        if body.department is not None:
+            updates["department"] = body.department
+
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
+
+        result = _update_location(location_id, updates)
+        if result["status"] == "error":
+            raise HTTPException(status_code=404, detail=result["message"])
+        return {"status": "ok", "data": result["location"]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ADMIN UPDATE LOCATION ERROR: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.delete("/locations/{location_id}")
+def admin_delete_location(location_id: int, _auth=Depends(get_current_admin)):
+    try:
+        result = _delete_location(location_id)
+        if result["status"] == "error":
+            raise HTTPException(status_code=400, detail=result["message"])
+        return {"status": "ok", "message": "Location deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ADMIN DELETE LOCATION ERROR: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error")
 
