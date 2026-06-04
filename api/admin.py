@@ -16,6 +16,7 @@ from db.controller.userController import (
 from db.controller.listingController import delete_listing, get_listing_details as _get_listing_details
 from db.controller.reportController import get_reports
 from db.controller.issueController import get_issues
+from db.controller.alertController import create_alert as _create_alert, get_all_user_contacts
 
 router = APIRouter(tags=["Admin"])
 
@@ -42,6 +43,16 @@ class UpdateReportRequest(BaseModel):
 
 class UpdateIssueRequest(BaseModel):
     status: str
+
+
+class CreateAlertRequest(BaseModel):
+    title: str
+    description: Optional[str] = None
+    alert_type: str
+    region: Optional[str] = None
+    product_name: Optional[str] = None
+    source_report_id: Optional[int] = None
+    expires_at: Optional[str] = None
 
 
 # ── Auth ────────────────────────────────────────────────────────────────
@@ -489,5 +500,89 @@ def admin_update_issue(issue_id: int, body: UpdateIssueRequest, _auth=Depends(ge
         raise
     except Exception as e:
         print(f"ADMIN UPDATE ISSUE ERROR: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# ── Alerts ──────────────────────────────────────────────────────────────
+
+VALID_ALERT_TYPES = ("disease_outbreak", "product_shortage", "general")
+
+
+@router.post("/alerts")
+def admin_create_alert(body: CreateAlertRequest, _auth=Depends(get_current_admin)):
+    try:
+        admin_user_id, _ = _auth
+
+        if body.alert_type not in VALID_ALERT_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid alert_type. Must be one of: {', '.join(VALID_ALERT_TYPES)}"
+            )
+
+        result = _create_alert(
+            title=body.title,
+            alert_type=body.alert_type,
+            created_by=admin_user_id,
+            description=body.description,
+            region=body.region,
+            product_name=body.product_name,
+            source_report_id=body.source_report_id,
+            expires_at=body.expires_at,
+        )
+        if result["status"] == "error":
+            raise HTTPException(status_code=400, detail=result["message"])
+
+        contacts = get_all_user_contacts(region=body.region)
+
+        notification = f"🚨 *{body.title}*\n\n"
+        if body.description:
+            notification += f"{body.description}\n\n"
+        notification += (
+            f"Type: {body.alert_type.replace('_', ' ').title()}\n"
+            f"Region: {body.region.replace('_', ' ').title() if body.region else 'All regions'}"
+        )
+
+        from utils.whatsapp import send_whatsapp_reply
+        import os
+        import requests
+
+        whatsapp_sent = 0
+        telegram_sent = 0
+
+        for user in contacts:
+            if user.get("whatsapp_chat_id"):
+                try:
+                    send_whatsapp_reply(user["whatsapp_chat_id"], notification)
+                    whatsapp_sent += 1
+                except Exception as e:
+                    print(f"ALERT WHATSAPP SEND ERROR (user {user['id']}): {e}")
+            if user.get("telegram_id"):
+                try:
+                    tg_token = os.getenv("TELEGRAM_TOKEN")
+                    if tg_token:
+                        requests.post(
+                            f"https://api.telegram.org/bot{tg_token}/sendMessage",
+                            json={"chat_id": user["telegram_id"], "text": notification, "parse_mode": "Markdown"},
+                            timeout=10,
+                        )
+                        telegram_sent += 1
+                except Exception as e:
+                    print(f"ALERT TELEGRAM SEND ERROR (user {user['id']}): {e}")
+
+        return {
+            "status": "ok",
+            "data": {
+                "alert": result["alert"],
+                "notified_count": len(contacts),
+                "whatsapp_sent": whatsapp_sent,
+                "telegram_sent": telegram_sent,
+            },
+            "message": f"Alert created and sent to {len(contacts)} users"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ADMIN CREATE ALERT ERROR: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error")
