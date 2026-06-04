@@ -418,6 +418,8 @@ def admin_list_interests(
     status: Optional[str] = Query(None),
     listing_id: Optional[int] = Query(None),
     user_id: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     _auth=Depends(get_current_admin),
 ):
     try:
@@ -427,8 +429,21 @@ def admin_list_interests(
                 status_code=400,
                 detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
             )
-        interests = _get_all_interests(status=status, listing_id=listing_id, user_id=user_id)
-        return {"status": "ok", "data": interests}
+        all_items = _get_all_interests(status=status, listing_id=listing_id, user_id=user_id)
+        total = len(all_items)
+        total_pages = max(1, -(-total // limit)) if total else 1
+        offset = (page - 1) * limit
+        items = all_items[offset:offset + limit]
+        return {
+            "status": "ok",
+            "data": {
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "total_pages": total_pages,
+                "interests": items,
+            },
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -685,13 +700,28 @@ def admin_list_advice(
     product_name: Optional[str] = Query(None),
     issue_type: Optional[str] = Query(None),
     is_verified: Optional[bool] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     _auth=Depends(get_current_admin),
 ):
     try:
-        items = _get_all_advice(
+        all_items = _get_all_advice(
             product_name=product_name, issue_type=issue_type, is_verified=is_verified,
         )
-        return {"status": "ok", "data": items}
+        total = len(all_items)
+        total_pages = max(1, -(-total // limit)) if total else 1
+        offset = (page - 1) * limit
+        items = all_items[offset:offset + limit]
+        return {
+            "status": "ok",
+            "data": {
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "total_pages": total_pages,
+                "advice": items,
+            },
+        }
     except Exception as e:
         print(f"ADMIN LIST ADVICE ERROR: {e}")
         traceback.print_exc()
@@ -789,6 +819,8 @@ def admin_create_product(body: CreateProductRequest, _auth=Depends(get_current_a
 @router.get("/products")
 def admin_list_products(
     type: Optional[str] = Query(None, alias="type"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     _auth=Depends(get_current_admin),
 ):
     try:
@@ -797,8 +829,21 @@ def admin_list_products(
                 status_code=400,
                 detail=f"Invalid type filter. Must be one of: {', '.join(VALID_PRODUCT_TYPES)}"
             )
-        products = _get_all_products(product_type=type)
-        return {"status": "ok", "data": products}
+        all_items = _get_all_products(product_type=type)
+        total = len(all_items)
+        total_pages = max(1, -(-total // limit)) if total else 1
+        offset = (page - 1) * limit
+        items = all_items[offset:offset + limit]
+        return {
+            "status": "ok",
+            "data": {
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "total_pages": total_pages,
+                "products": items,
+            },
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -902,13 +947,28 @@ def admin_create_product_price(body: CreateProductPriceRequest, _auth=Depends(ge
 def admin_list_product_prices(
     product_id: Optional[int] = Query(None),
     region: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     _auth=Depends(get_current_admin),
 ):
     try:
         if region and region not in VALID_REGIONS:
             raise HTTPException(status_code=400, detail=f"Invalid region. Must be one of: {', '.join(VALID_REGIONS)}")
-        prices = _get_product_prices(product_id=product_id, region=region)
-        return {"status": "ok", "data": prices}
+        all_items = _get_product_prices(product_id=product_id, region=region)
+        total = len(all_items)
+        total_pages = max(1, -(-total // limit)) if total else 1
+        offset = (page - 1) * limit
+        items = all_items[offset:offset + limit]
+        return {
+            "status": "ok",
+            "data": {
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "total_pages": total_pages,
+                "product_prices": items,
+            },
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -1016,6 +1076,8 @@ def admin_create_location(body: CreateLocationRequest, _auth=Depends(get_current
 def admin_list_locations(
     town: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     _auth=Depends(get_current_admin),
 ):
     try:
@@ -1024,8 +1086,21 @@ def admin_list_locations(
                 status_code=400,
                 detail=f"Invalid region. Must be one of: {', '.join(VALID_LOCATION_REGIONS)}"
             )
-        locations = _get_all_locations(town=town, region=region)
-        return {"status": "ok", "data": locations}
+        all_items = _get_all_locations(town=town, region=region)
+        total = len(all_items)
+        total_pages = max(1, -(-total // limit)) if total else 1
+        offset = (page - 1) * limit
+        items = all_items[offset:offset + limit]
+        return {
+            "status": "ok",
+            "data": {
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "total_pages": total_pages,
+                "locations": items,
+            },
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -1205,6 +1280,8 @@ VALID_ALERT_TYPES = ("disease_outbreak", "product_shortage", "general")
 def admin_list_alerts(
     alert_type: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     _auth=Depends(get_current_admin),
 ):
     try:
@@ -1213,8 +1290,21 @@ def admin_list_alerts(
                 status_code=400,
                 detail=f"Invalid alert_type. Must be one of: {', '.join(VALID_ALERT_TYPES)}"
             )
-        alerts = _get_alerts(alert_type=alert_type, region=region)
-        return {"status": "ok", "data": alerts}
+        all_items = _get_alerts(alert_type=alert_type, region=region)
+        total = len(all_items)
+        total_pages = max(1, -(-total // limit)) if total else 1
+        offset = (page - 1) * limit
+        items = all_items[offset:offset + limit]
+        return {
+            "status": "ok",
+            "data": {
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "total_pages": total_pages,
+                "alerts": items,
+            },
+        }
     except HTTPException:
         raise
     except Exception as e:
