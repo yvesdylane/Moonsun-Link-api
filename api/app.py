@@ -41,9 +41,17 @@ async def lifespan(app: FastAPI):
     # Set webhook
     tg_token = os.getenv("TELEGRAM_TOKEN")
     ngrok_url = os.getenv("WEBHOOK_BASE_URL")
+
+    print(f"🔍 DEBUG: WEBHOOK_BASE_URL = '{ngrok_url}'")
+    if tg_token:
+        print(f"🔍 DEBUG: TELEGRAM_TOKEN len = {len(tg_token)}")
+    else:
+        print("🔍 DEBUG: TELEGRAM_TOKEN is None")
+
     if tg_token and ngrok_url:
         import httpx
         webhook_url = f"{ngrok_url.rstrip('/')}/telegram"
+        print(f"🔍 DEBUG: Full webhook URL = '{webhook_url}'")
         async with httpx.AsyncClient() as client:
             r = await client.post(
                 f"https://api.telegram.org/bot{tg_token}/setWebhook",
