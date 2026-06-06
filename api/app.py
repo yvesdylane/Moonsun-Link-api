@@ -19,6 +19,7 @@ from telegram.ext import Application, MessageHandler, CallbackQueryHandler, filt
 from api.admin import router as admin_router
 from api.miniapp import router as miniapp_router
 import asyncio
+import json
 import os
 import traceback
 
@@ -31,17 +32,38 @@ async def lifespan(app: FastAPI):
     await async_pool.open()
     print("✅ Async database pool opened")
 
-    # Start Telegram bot
+    # Start Telegram bot (webhook mode — no polling)
     from api.telegram_bot import setup_handlers
     setup_handlers(telegram_app)
     await telegram_app.initialize()
-    await telegram_app.start()
-    print("✅ Telegram bot ready via webhook")
+    print("✅ Telegram bot initialized")
+
+    # Set webhook
+    tg_token = os.getenv("TELEGRAM_TOKEN")
+    ngrok_url = os.getenv("WEBHOOK_BASE_URL")
+    if tg_token and ngrok_url:
+        import httpx
+        webhook_url = f"{ngrok_url.rstrip('/')}/telegram"
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                f"https://api.telegram.org/bot{tg_token}/setWebhook",
+                json={"url": webhook_url},
+            )
+            result = r.json()
+            if result.get("ok"):
+                print(f"✅ Telegram webhook set to {webhook_url}")
+            else:
+                print(f"❌ Failed to set webhook: {result}")
+    else:
+        print("⚠️ TELEGRAM_TOKEN or WEBHOOK_BASE_URL not set — webhook not configured")
 
     yield
 
     # Shutdown
-    await telegram_app.stop()
+    try:
+        await telegram_app.stop()
+    except RuntimeError:
+        pass  # not running (webhook mode — never started polling)
     await async_pool.close()
     print("✅ Async database pool closed")
 
@@ -53,7 +75,10 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://moonsulink.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -248,7 +273,12 @@ def chat(request: MessageRequest):
 
 @app.post("/telegram")
 async def telegram_webhook(request: Request):
-    data = await request.json()
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        print("Empty or invalid body on /telegram — ignoring")
+        return {"status": "ignored"}
+
     print(data)
     update = Update.de_json(data, telegram_app.bot)
     await telegram_app.process_update(update)

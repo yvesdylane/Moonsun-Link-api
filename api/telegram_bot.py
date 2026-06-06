@@ -13,7 +13,7 @@ import tempfile
 
 router = ToolRouter()
 LOGO_PATH = Path("Assets/logo.jpg")
-MARKET_URL = "https://pierce-improving-shaw-orlando.trycloudflare.com/miniapp"  # replace when ready`
+MARKET_URL = os.getenv("MINI_APP_URL", "https://moonsulink.vercel.app/miniapp")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from utils.translator import translate_reply
