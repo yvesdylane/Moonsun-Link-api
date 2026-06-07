@@ -907,11 +907,11 @@ async def send_telegram_reply(update: Update, result: dict):
         await update.message.reply_text(reply)
 
 def setup_handlers(app: Application):
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("create", create_account))
-    app.add_handler(CommandHandler("resend", resend_code))
+    app.add_handler(CommandHandler("start", start, filters=filters.ChatType.PRIVATE))
+    app.add_handler(CommandHandler("create", create_account, filters=filters.ChatType.PRIVATE))
+    app.add_handler(CommandHandler("resend", resend_code, filters=filters.ChatType.PRIVATE))
     app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    app.add_handler(MessageHandler(filters.CONTACT & filters.ChatType.PRIVATE, handle_contact))
+    app.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, handle_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_message))
+    app.add_handler(MessageHandler(filters.VOICE & filters.ChatType.PRIVATE, handle_voice))
